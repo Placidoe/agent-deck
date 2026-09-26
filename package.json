@@ -1,0 +1,47 @@
+{
+  "name": "agent-deck-demo",
+  "version": "0.4.0",
+  "description": "A local-first desktop control room for parallel coding-agent sessions.",
+  "author": "Agent Deck",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "desktop:build": "npm run build",
+    "desktop:dev": "AGENT_DECK_DEV_URL=http://127.0.0.1:4173 ../research/labs/grokbot-desktop/node_modules/.bin/electron .",
+    "desktop:run": "../research/labs/grokbot-desktop/node_modules/.bin/electron .",
+    "desktop:package": "npm run desktop:build && ../research/labs/grokbot-desktop/node_modules/.bin/electron-builder --mac dir --config electron-builder.config.cjs",
+    "desktop:dmg": "npm run desktop:build && ../research/labs/grokbot-desktop/node_modules/.bin/electron-builder --mac dmg --config electron-builder.config.cjs",
+    "test:codex": "node scripts/smoke-codex.cjs",
+    "test:realtime": "../research/labs/grokbot-desktop/node_modules/.bin/electron scripts/smoke-realtime.cjs",
+    "test:voice": "node --test tests/realtime-voice.test.mjs",
+    "test:mission": "ELECTRON_RUN_AS_NODE=1 ../research/labs/grokbot-desktop/node_modules/.bin/electron --test tests/mission-core.test.mjs",
+    "test:providers": "node --test tests/provider-registry.test.mjs",
+    "test:adapters": "node --test tests/adapter-host.test.mjs",
+    "test:attention-policy": "node --test tests/attention-policy.test.mjs",
+    "test:api-runtime": "node --test tests/api-agent-runtime.test.mjs",
+    "test:mission:fallback": "node --test tests/mission-core.test.mjs",
+    "test:performance": "node --test tests/mission-conversation.test.mjs",
+    "test:terminal": "node --test tests/terminal-service.test.mjs",
+    "test:report-quality": "node --test tests/html-report-quality.test.mjs",
+    "test:mission-live": "node scripts/smoke-mission.cjs",
+    "test:mission-e2e": "node scripts/smoke-mission-e2e.cjs",
+    "test:desktop": "node scripts/desktop-qa.mjs"
+  },
+  "main": "desktop/main.cjs",
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@vitejs/plugin-react": "5.0.4",
+    "@xyflow/react": "^12.11.6",
+    "better-sqlite3": "^12.10.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "vite": "6.4.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

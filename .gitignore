@@ -1,0 +1,19 @@
+# Dependencies and local package-manager state
+node_modules/
+.pnpm-store/
+
+# Reproducible browser builds and packaged desktop binaries
+dist/
+release/
+release-*/
+
+# Local OS/editor state
+.DS_Store
+*.log
+
+# Runtime data and temporary captures
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+tmp/
+
