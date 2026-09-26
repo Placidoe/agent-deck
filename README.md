@@ -25,6 +25,19 @@ flowchart LR
 - 本地安全：通过 Electron main-process bridge 访问本机资源；研究模式使用应用管理的隔离工作区。
 - 证据优先：任务结果、文件变更、验收证据和消息均来自真实持久化记录。
 
+## 界面演示
+
+Mission 画布把 Main Agent、依赖任务、证据、人工验收与集成决策放在同一个可追溯的工作区。
+下面是由设计 QA 记录生成的简短演示；它展示界面与已验证交互，不代表一个正在运行的外部任务。
+
+![Agent Deck Mission walkthrough](assets/showcase/agent-deck-walkthrough.gif)
+
+[下载 1080p 演示视频](assets/showcase/agent-deck-walkthrough.mp4)
+
+| 任务依赖与审阅入口 | 集成前的人工决策 |
+| --- | --- |
+| ![Mission workspace](artifacts/design-qa/mission-1540.png) | ![Integration review](artifacts/design-qa/mission-integration-1120.png) |
+
 ## 开发
 
 ```bash
