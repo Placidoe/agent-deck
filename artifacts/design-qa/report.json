@@ -1,0 +1,167 @@
+{
+  "source": "Real local ledger backup; execution disabled",
+  "checks": [
+    {
+      "name": "requirements-1540",
+      "failures": [],
+      "window": {
+        "width": 1540,
+        "height": 960
+      },
+      "viewport": null,
+      "toolbar": null,
+      "decision": null
+    },
+    {
+      "name": "requirements-1120",
+      "failures": [],
+      "window": {
+        "width": 1120,
+        "height": 720
+      },
+      "viewport": null,
+      "toolbar": null,
+      "decision": null
+    },
+    {
+      "name": "composer-1120",
+      "failures": [],
+      "window": {
+        "width": 1120,
+        "height": 720
+      },
+      "viewport": null,
+      "toolbar": null,
+      "decision": null
+    },
+    {
+      "name": "mission-1540",
+      "failures": [],
+      "window": {
+        "width": 1540,
+        "height": 960
+      },
+      "viewport": {
+        "x": 352,
+        "y": 264,
+        "width": 784,
+        "height": 668,
+        "bottom": 932,
+        "right": 1136
+      },
+      "toolbar": {
+        "x": 352,
+        "y": 216,
+        "width": 784,
+        "height": 48,
+        "bottom": 264,
+        "right": 1136
+      },
+      "decision": {
+        "x": 368,
+        "y": 118,
+        "width": 752,
+        "height": 98,
+        "bottom": 216,
+        "right": 1120
+      }
+    },
+    {
+      "name": "mission-1120",
+      "failures": [],
+      "window": {
+        "width": 1120,
+        "height": 720
+      },
+      "viewport": {
+        "x": 312,
+        "y": 290.2421875,
+        "width": 474,
+        "height": 401.7578125,
+        "bottom": 692,
+        "right": 786
+      },
+      "toolbar": {
+        "x": 312,
+        "y": 242.2421875,
+        "width": 474,
+        "height": 48,
+        "bottom": 290.2421875,
+        "right": 786
+      },
+      "decision": {
+        "x": 322,
+        "y": 114,
+        "width": 454,
+        "height": 128.2421875,
+        "bottom": 242.2421875,
+        "right": 776
+      }
+    },
+    {
+      "name": "integration-action-1120",
+      "failures": [],
+      "window": {
+        "width": 1120,
+        "height": 720
+      },
+      "viewport": {
+        "x": 312,
+        "y": 290.2421875,
+        "width": 474,
+        "height": 401.7578125,
+        "bottom": 692,
+        "right": 786
+      },
+      "toolbar": {
+        "x": 312,
+        "y": 242.2421875,
+        "width": 474,
+        "height": 48,
+        "bottom": 290.2421875,
+        "right": 786
+      },
+      "decision": {
+        "x": 322,
+        "y": 114,
+        "width": 454,
+        "height": 128.2421875,
+        "bottom": 242.2421875,
+        "right": 776
+      }
+    },
+    {
+      "name": "navigation-1120",
+      "failures": [],
+      "window": {
+        "width": 1120,
+        "height": 720
+      },
+      "viewport": {
+        "x": 312,
+        "y": 290.2421875,
+        "width": 474,
+        "height": 401.7578125,
+        "bottom": 692,
+        "right": 786
+      },
+      "toolbar": {
+        "x": 312,
+        "y": 242.2421875,
+        "width": 474,
+        "height": 48,
+        "bottom": 290.2421875,
+        "right": 786
+      },
+      "decision": {
+        "x": 322,
+        "y": 114,
+        "width": 454,
+        "height": 128.2421875,
+        "bottom": 242.2421875,
+        "right": 776
+      }
+    }
+  ],
+  "errors": []
+}
