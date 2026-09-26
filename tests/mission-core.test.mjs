@@ -18,6 +18,7 @@ const { assertStrictOutputSchema } = require("../desktop/structured-output-schem
 const { missionPlanSchema, mainAgentFollowupSchema, taskResultSchema } = require("../desktop/mission-orchestrator.cjs");
 const { CodexAppServer } = require("../desktop/codex-app-server.cjs");
 const { plannerPerformanceRoute, taskNeedsHtml, workerPerformanceRoute } = require("../desktop/mission-performance.cjs");
+const { buildDirectPlan, classifyMissionRequest, fitTaskBudgets, optimizeMissionPlan } = require("../desktop/adaptive-runtime.cjs");
 
 test("all output contracts recursively satisfy strict object requirements", () => {
   for (const schema of [missionPlanSchema, mainAgentFollowupSchema, taskResultSchema]) {
@@ -60,6 +61,46 @@ test("performance routing lowers routine evidence work without downgrading synth
   assert.equal(taskNeedsHtml(evidence), false);
   assert.equal(workerPerformanceRoute(report).effort, "medium");
   assert.equal(taskNeedsHtml(report), true);
+  assert.equal(workerPerformanceRoute(evidence, { direct: true }).effort, "high");
+  assert.equal(workerPerformanceRoute(evidence, { direct: true }).id, "direct-quality");
+});
+
+test("adaptive routing skips orchestration for coherent code work and escalates complex research", () => {
+  const direct = classifyMissionRequest({ title: "Fix date parser", outcome: "Reject numeric strings such as 1.5 and keep existing tests green", executionMode: "code" });
+  assert.equal(direct.mode, "direct");
+  assert.equal(direct.maxWorkers, 1);
+  const mission = classifyMissionRequest({ title: "Architecture benchmark", outcome: "Research and compare multiple runtimes, produce a report and migration roadmap", executionMode: "research" });
+  assert.equal(mission.mode, "mission");
+  assert.ok(mission.maxTasks >= 4);
+  assert.equal(classifyMissionRequest({ title: "Tiny fix", outcome: "Rename one field", orchestrationMode: "mission" }).mode, "mission");
+  const constrained = classifyMissionRequest({ title: "Architecture benchmark", outcome: "Research several runtimes", executionMode: "research", valueContract: { tokenBudget: 1000 } });
+  assert.equal(constrained.maxTasks, 2);
+  assert.equal(constrained.maxWorkers, 2);
+});
+
+test("direct plans preserve one context, quality checks, and the total token budget", () => {
+  const input = { title: "Fix date parser", outcome: "Reject numeric strings and preserve valid dates", valueContract: { tokenBudget: 12000 } };
+  const route = classifyMissionRequest(input);
+  const plan = normalizePlan(buildDirectPlan(input, route));
+  assert.equal(plan.runtime.mode, "direct");
+  assert.equal(plan.tasks.length, 1);
+  assert.equal(plan.tasks[0].value.estimatedTokenBudget, 12000);
+  assert.match(plan.tasks[0].acceptanceCriteria.join(" "), /boundary|invalid-input/i);
+});
+
+test("mission plan optimizer serializes verification behind implementation and enforces budget", () => {
+  const normalized = normalizePlan({ ...validPlan, tasks: [
+    { key: "IMPLEMENT", title: "Implement parser fix", description: "Change parser code", agentRole: "Engineer", dependencies: [], acceptanceCriteria: ["Patch complete"], estimatedTokenBudget: 9000 },
+    { key: "TEST", title: "Test parser", description: "Run validation tests", agentRole: "QA", dependencies: [], acceptanceCriteria: ["Tests pass"], estimatedTokenBudget: 9000 },
+    { key: "REVIEW", title: "Review release", description: "Audit final patch", agentRole: "Reviewer", dependencies: [], acceptanceCriteria: ["Review complete"], estimatedTokenBudget: 9000 },
+  ] });
+  const route = { mode: "mission", tier: "coordinated", score: 3, reasons: ["test"], maxWorkers: 3, maxTasks: 4 };
+  const optimized = optimizeMissionPlan(normalized, route, 12000);
+  assert.deepEqual(optimized.tasks.find(task => task.key === "TEST").dependencies, ["IMPLEMENT"]);
+  assert.deepEqual(optimized.tasks.find(task => task.key === "REVIEW").dependencies, ["IMPLEMENT", "TEST"]);
+  assert.ok(optimized.tasks.reduce((sum, task) => sum + task.value.estimatedTokenBudget, 0) <= 12000);
+  assert.equal(optimized.runtime.repairedDependencyEdges, 3);
+  assert.equal(fitTaskBudgets(normalized.tasks, 12000).length, 3);
 });
 
 test("strict preflight handles nullable nested objects and definitions", () => {
@@ -647,7 +688,7 @@ test("orchestrator turns a real provider plan into claimed worker threads and re
     commit() { return { commitHash: "a".repeat(40), files: [], diffStat: "", clean: true }; },
   };
   const orchestrator = new MissionOrchestrator({ codex, store, worktrees });
-  const created = await orchestrator.create({ title: "Real", outcome: "Ship", cwd: directory, maxWorkers: 2 });
+  const created = await orchestrator.create({ title: "Real", outcome: "Ship", cwd: directory, maxWorkers: 2, orchestrationMode: "mission" });
   await orchestrator.handleCodexEvent({ method: "item/completed", params: { threadId: created.mainThreadId, item: { id: "plan-item", type: "agentMessage", phase: "final_answer", text: JSON.stringify(validPlan) } } });
   const planned = store.getMission(created.id);
   assert.equal(planned.status, "ready");
@@ -675,6 +716,58 @@ test("orchestrator turns a real provider plan into claimed worker threads and re
   const integrated = store.getMission(created.id);
   assert.equal(integrated.status, "completed");
   assert.equal(integrated.integrationCommit, "a".repeat(40));
+}));
+
+test("adaptive direct mode skips the planner and auto-integrates after one human review", async () => withTempDirAsync(async (directory) => {
+  const repository = path.join(directory, "repo");
+  fs.mkdirSync(repository);
+  execFileSync("/usr/bin/git", ["init", "-q"], { cwd: repository });
+  fs.writeFileSync(path.join(repository, "parser.js"), "export const parse = value => value;\n");
+  execFileSync("/usr/bin/git", ["add", "parser.js"], { cwd: repository });
+  execFileSync("/usr/bin/git", ["-c", "user.name=Test", "-c", "user.email=test@localhost", "commit", "-qm", "baseline"], { cwd: repository });
+  const calls = [];
+  const codex = {
+    async createThread(input) { calls.push({ kind: "thread", input }); return { thread: { id: "direct-worker" }, model: "test-model" }; },
+    async sendTurn(input) { calls.push({ kind: "turn", input }); return { id: "direct-turn" }; },
+  };
+  const store = new MissionStore(path.join(directory, "direct.sqlite3"));
+  const worktrees = new WorktreeManager(path.join(directory, "worktrees"));
+  const orchestrator = new MissionOrchestrator({ codex, store, worktrees });
+  const requirement = store.createRequirement({
+    title: "Fix date parser",
+    outcome: "Reject numeric strings such as 1.5 while preserving valid ISO dates",
+    body: "Fix the parser and add focused regression tests.",
+    workspacePath: repository,
+    status: "ready_to_plan",
+    valueContract: { tokenBudget: 14000 },
+  });
+  const claimed = await orchestrator.claimNextRequirement({ requirementId: requirement.id });
+  const created = claimed.mission;
+  assert.equal(claimed.requirement.status, "running");
+  assert.equal(created.spec.runtime.mode, "direct");
+  assert.equal(created.mainThreadId, null);
+  assert.equal(created.tasks.length, 1);
+  assert.equal(created.tasks[0].status, "running");
+  assert.equal(calls.filter(call => call.kind === "thread").length, 1);
+  assert.equal(calls.filter(call => call.kind === "turn").length, 1);
+  assert.equal(calls.find(call => call.kind === "turn").input.effort, "high");
+  assert.match(calls.find(call => call.kind === "turn").input.prompt, /DIRECT QUALITY CONTRACT/);
+  assert.match(calls.find(call => call.kind === "turn").input.prompt, /invalid-input|boundary/i);
+  const task = created.tasks[0];
+  fs.writeFileSync(path.join(task.worktreePath, "parser.js"), "export const parse = value => typeof value === 'string' && /^\\d+(?:\\.\\d+)?$/.test(value) ? null : value;\n");
+  const result = { summary: "Parser fixed and boundary checked", acceptance: task.acceptanceCriteria.map(criterion => ({ criterion, passed: true, evidence: "focused test exited 0" })), changedFiles: ["parser.js"], blockers: [] };
+  await orchestrator.handleCodexEvent({ method: "item/completed", params: { threadId: task.agentThreadId, item: { id: "direct-result", type: "agentMessage", phase: "final_answer", text: JSON.stringify(result) } } });
+  await orchestrator.handleCodexEvent({ method: "turn/completed", params: { threadId: task.agentThreadId, turn: { id: task.activeTurnId, status: "completed" } } });
+  assert.equal(store.getTask(task.id).status, "review");
+  const completed = await orchestrator.acceptTask(created.id, task.id);
+  assert.equal(completed.status, "completed");
+  assert.ok(completed.integrationCommit);
+  assert.ok(completed.events.some(event => event.type === "mission.direct.auto_integrating"));
+  assert.equal(completed.events.filter(event => event.type === "planner.turn.started").length, 0);
+  const ledger = store.valueLedger(created.id);
+  assert.equal(ledger.costs.plannerTokens, 0);
+  assert.ok(ledger.costs.workerPromptTokens > 0);
+  store.close();
 }));
 
 test("pre-thread dependency conflicts start a real conflict-resolution Worker instead of a dead-end Blocked task", async () => withTempDirAsync(async (directory) => {
@@ -929,7 +1022,7 @@ test("canceling a mission interrupts active turns and preserves completed eviden
   const store = new MissionStore(path.join(directory, "cancel.sqlite3"));
   const worktrees = { assertReady() { return { available: true }; }, create({ taskKey }) { const target = path.join(directory, taskKey); fs.mkdirSync(target); return { path: target, branch: `agentdeck/${taskKey}` }; } };
   const orchestrator = new MissionOrchestrator({ codex, store, worktrees });
-  const created = await orchestrator.create({ title: "Cancel", outcome: "Stop safely", cwd: directory, maxWorkers: 1 });
+  const created = await orchestrator.create({ title: "Cancel", outcome: "Stop safely", cwd: directory, maxWorkers: 1, orchestrationMode: "mission" });
   await orchestrator.handleCodexEvent({ method: "item/completed", params: { threadId: created.mainThreadId, item: { id: "plan", type: "agentMessage", text: JSON.stringify({ ...validPlan, tasks: [validPlan.tasks[0]] }) } } });
   await orchestrator.approve(created.id);
   const canceled = await orchestrator.cancel(created.id);

@@ -23,6 +23,15 @@ function taskNeedsHtml(task = {}) {
 function workerPerformanceRoute(task = {}, options = {}) {
   const text = taskText(task);
   const reportTask = taskNeedsHtml(task);
+  if (options.direct) {
+    return {
+      id: "direct-quality",
+      effort: "high",
+      contextTokenBudget: 2400,
+      maxToolBatches: 12,
+      reportTask,
+    };
+  }
   const complex = Boolean(options.mergeConflict) || DEEP_WORK_PATTERN.test(text) || reportTask;
   const simple = SIMPLE_WORK_PATTERN.test(text) && !complex;
   const effort = complex ? "medium" : "low";

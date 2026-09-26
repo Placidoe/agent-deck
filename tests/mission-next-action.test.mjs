@@ -28,6 +28,13 @@ test("next mission action prioritizes explicit permission over review and launch
   assert.equal(action.panel, "conversation");
 });
 
+test("direct review explains that one acceptance finishes integration", () => {
+  const action = nextMissionAction({ status: "review", spec: { runtime: { mode: "direct" } }, tasks: [task("DIRECT_EXECUTION", "review")] });
+  assert.equal(action.kind, "review");
+  assert.match(action.title, /直通/);
+  assert.match(action.detail, /自动集成/);
+});
+
 test("next mission action gives a blocked worker its persisted error and recovery view", () => {
   const action = nextMissionAction({ status: "running", tasks: [task("T4", "blocked", { error: "Dependency merge conflict" })] });
   assert.equal(action.kind, "blocked");

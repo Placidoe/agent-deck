@@ -371,10 +371,12 @@ class MissionStore {
       id: row.id, eventType: row.event_type, amountCny: Number(row.amount_cny || 0), note: row.note, source: row.source, createdAt: row.created_at,
     }));
     const contextTokens = mission.events.filter((event) => event.type === "context.capsule.created").reduce((sum, event) => sum + Number(event.payload?.estimatedTokens || 0), 0);
-    const plannerTokens = estimateTokens(`${mission.sourcePrompt}\n${mission.outcome}\n${JSON.stringify(mission.spec || {})}`);
+    const recordedPlannerTokens = mission.events.filter((event) => event.type === "planner.turn.started").reduce((sum, event) => sum + Number(event.payload?.promptEstimatedTokens || 0), 0);
+    const plannerTokens = recordedPlannerTokens || (mission.spec?.runtime?.plannerSkipped ? 0 : estimateTokens(`${mission.sourcePrompt}\n${mission.outcome}\n${JSON.stringify(mission.spec || {})}`));
+    const workerPromptTokens = mission.events.filter((event) => event.type === "worker.turn.started").reduce((sum, event) => sum + Number(event.payload?.promptEstimatedTokens || 0), 0);
     const outputTokens = mission.tasks.reduce((sum, task) => sum + estimateTokens(JSON.stringify(task.result || "")), 0);
     const coordinationTokens = mission.messages.reduce((sum, message) => sum + estimateTokens(message.text), 0);
-    const estimatedTokens = plannerTokens + contextTokens + outputTokens + coordinationTokens;
+    const estimatedTokens = plannerTokens + workerPromptTokens + (workerPromptTokens ? 0 : contextTokens) + outputTokens + coordinationTokens;
     const observedTokens = mission.events.filter((event) => event.type === "provider.turn/completed").reduce((sum, event) => {
       const usage = event.payload?.turn?.usage || event.payload?.usage || {};
       return sum + Number(usage.total_tokens || usage.totalTokens || (Number(usage.prompt_tokens || usage.promptTokens || 0) + Number(usage.completion_tokens || usage.completionTokens || 0)) || 0);
@@ -390,7 +392,7 @@ class MissionStore {
     const verifiedArtifacts = mission.artifacts.filter((artifact) => artifact.verificationStatus === "user_verified").length;
     return {
       missionId, contract, valueEvents,
-      costs: { estimatedTokens, observedTokens, billedTokens, tokenSource: observedTokens > 0 ? "provider_reported" : "local_estimate", plannerTokens, contextTokens, outputTokens, coordinationTokens, estimatedModelCostCny, manualCostCny, totalCostCny, tokenBudgetRemaining: Math.max(0, contract.tokenBudget - billedTokens) },
+      costs: { estimatedTokens, observedTokens, billedTokens, tokenSource: observedTokens > 0 ? "provider_reported" : "local_estimate", plannerTokens, workerPromptTokens, contextTokens, outputTokens, coordinationTokens, estimatedModelCostCny, manualCostCny, totalCostCny, tokenBudgetRemaining: Math.max(0, contract.tokenBudget - billedTokens) },
       value: { plannedValueCny, confirmedValueCny, projectedRoi, realizedRoi, verifiedArtifacts, completedTasks: mission.tasks.filter((task) => task.status === "completed").length, totalTasks: mission.tasks.length },
       disclaimer: observedTokens > 0 ? "Token usage is reported by the active provider where available; cost still uses your locally configured rate. Confirmed value is recorded only from your evidence entries." : "Token and model cost are local estimates using your configured rate. Confirmed value is recorded only from your evidence entries.",
     };

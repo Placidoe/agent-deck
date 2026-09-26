@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { CodexAppServer } = require("../desktop/codex-app-server.cjs");
-const { MissionOrchestrator, normalizePlan } = require("../desktop/mission-orchestrator.cjs");
+const { MissionOrchestrator } = require("../desktop/mission-orchestrator.cjs");
 const { MissionStore } = require("../desktop/mission-store.cjs");
 const { WorktreeManager } = require("../desktop/worktree-manager.cjs");
 
@@ -53,31 +53,18 @@ async function main() {
   });
 
   await client.start();
-  const mission = store.createMission({
+  const mission = await orchestrator.create({
     title: "Live Codex filesystem mission",
     outcome: "Create a verified file through a real Codex worker",
     sourcePrompt: "Create LIVE_CODEX_RESULT.txt containing exactly: codex worker completed",
     cwd: repository,
-    maxWorkers: 1,
+    orchestrationMode: "adaptive",
+    valueContract: { tokenBudget: 20000 },
   });
-  store.savePlan(mission.id, normalizePlan({
-    title: "Live Codex filesystem mission",
-    outcome: "Create a verified file through a real Codex worker",
-    scope: ["One text file"],
-    nonGoals: ["No dependency changes"],
-    constraints: ["Write only inside the assigned worktree"],
-    acceptanceCriteria: ["The requested file exists with the exact content"],
-    tasks: [{
-      key: "LIVE-FILE",
-      title: "Create the live verification file",
-      description: "Create LIVE_CODEX_RESULT.txt at the repository root. Its entire content must be exactly `codex worker completed` followed by one newline. Verify the file content before reporting completion.",
-      agentRole: "Implementation Agent",
-      dependencies: [],
-      acceptanceCriteria: ["LIVE_CODEX_RESULT.txt exists and contains exactly `codex worker completed` followed by one newline"],
-    }],
-  }));
-
-  await orchestrator.approve(mission.id);
+  assert.equal(mission.mainThreadId, null);
+  assert.equal(mission.spec.runtime.mode, "direct");
+  assert.equal(mission.tasks.length, 1);
+  assert.equal(mission.events.filter((event) => event.type === "planner.turn.started").length, 0);
   const reviewMission = await waitFor(
     () => store.getMission(mission.id),
     (snapshot) => ["review", "blocked", "failed"].includes(snapshot.status),
@@ -90,12 +77,9 @@ async function main() {
   assert.deepEqual(task.result.observedChanges.files, ["LIVE_CODEX_RESULT.txt"]);
 
   await orchestrator.acceptTask(mission.id, task.id);
-  const ready = store.getMission(mission.id);
-  assert.equal(ready.status, "ready_to_integrate");
-  assert.match(ready.tasks[0].commitHash, /^[a-f0-9]{40}$/);
-
-  const integrated = await orchestrator.integrate(mission.id);
+  const integrated = store.getMission(mission.id);
   assert.equal(integrated.status, "completed", integrated.error);
+  assert.match(integrated.tasks[0].commitHash, /^[a-f0-9]{40}$/);
   assert.equal(fs.readFileSync(path.join(integrated.integrationPath, "LIVE_CODEX_RESULT.txt"), "utf8"), "codex worker completed\n");
   assert.match(integrated.integrationCommit, /^[a-f0-9]{40}$/);
   console.log(JSON.stringify({

@@ -7,6 +7,7 @@ const {
   promptTokenEstimate,
   workerPerformanceRoute,
 } = require("./mission-performance.cjs");
+const { buildDirectPlan, classifyMissionRequest, optimizeMissionPlan } = require("./adaptive-runtime.cjs");
 
 const LEDGER_STRING_LIMIT = 32768;
 const HTML_FIRST_DELIVERABLE = HTML_REPORT_CONTRACT;
@@ -44,9 +45,9 @@ function providerEventKey(event, threadId) {
   return identity == null ? null : `${method}:${threadId}:${identity}`;
 }
 
-function missionPlanningPrompt(mission) {
+function missionPlanningPrompt(mission, runtimeRoute = mission.spec?.runtime || {}) {
   const valueContract = mission.valueContract || {};
-  return `Act as the Main Agent and convert this product request into an executable engineering mission. Produce a dependency-safe task DAG for independent workers. Keep tasks coarse enough to avoid same-file conflicts, include concrete acceptance criteria, and do not invent progress or completed work. Mark only synthesis, report, review, comparison, analysis, plan, or dashboard tasks as human-facing HTML work; evidence collection should retain native formats. For every task, provide valueScore (1-5), estimatedTokenBudget, and valueRationale. Favor independently verifiable high marginal-value work; do not spend parallel work on low-value duplicate investigation.\n\nREQUEST\n${mission.sourcePrompt || mission.outcome}\n\nDESIRED OUTCOME\n${mission.outcome}\n\nVALUE CONTRACT\nScenario: ${valueContract.scenario || "研发交付"}\nValue type: ${valueContract.valueType || "time_saved"}\nTarget metric: ${valueContract.targetMetric || "not supplied"}\nExpected value: ¥${valueContract.expectedValueCny || 0}; baseline human time: ${valueContract.baselineHours || 0}h; total token budget: ${valueContract.tokenBudget || 80000}.\n\n${FAST_EXECUTION_CONTRACT}`;
+  return `Act as the Main Agent and convert this product request into an executable engineering mission. Produce a dependency-safe task DAG for independent workers. This request was routed as ${runtimeRoute.tier || "coordinated"}; return no more than ${runtimeRoute.maxTasks || 8} tasks and keep their combined estimatedTokenBudget within ${valueContract.tokenBudget || 80000}. Keep tasks coarse enough to avoid same-file conflicts. Implementation and its focused tests belong in the same task unless they can truly run against an already merged implementation. A final verifier, reviewer, report, or integration task must depend on every change it evaluates. Include concrete acceptance criteria and do not invent progress or completed work. Mark only synthesis, report, review, comparison, analysis, plan, or dashboard tasks as human-facing HTML work; evidence collection should retain native formats. For every task, provide valueScore (1-5), estimatedTokenBudget, and valueRationale. Favor independently verifiable high marginal-value work; do not spend parallel work on low-value duplicate investigation. Verification must derive boundary and invalid-input checks from the request instead of merely rerunning visible happy-path tests.\n\nREQUEST\n${mission.sourcePrompt || mission.outcome}\n\nDESIRED OUTCOME\n${mission.outcome}\n\nVALUE CONTRACT\nScenario: ${valueContract.scenario || "研发交付"}\nValue type: ${valueContract.valueType || "time_saved"}\nTarget metric: ${valueContract.targetMetric || "not supplied"}\nExpected value: ¥${valueContract.expectedValueCny || 0}; baseline human time: ${valueContract.baselineHours || 0}h; total token budget: ${valueContract.tokenBudget || 80000}.\n\n${FAST_EXECUTION_CONTRACT}`;
 }
 
 const missionPlanSchema = {
@@ -162,7 +163,8 @@ function normalizePlan(raw) {
   return {
     title: String(raw.title || "Mission").trim(), outcome: String(raw.outcome || "").trim(),
     scope: (raw.scope || []).map(String), nonGoals: (raw.nonGoals || []).map(String),
-    constraints: (raw.constraints || []).map(String), acceptanceCriteria: (raw.acceptanceCriteria || []).map(String), tasks,
+    constraints: (raw.constraints || []).map(String), acceptanceCriteria: (raw.acceptanceCriteria || []).map(String),
+    ...(raw.runtime ? { runtime: { ...raw.runtime } } : {}), tasks,
   };
 }
 
@@ -201,7 +203,8 @@ function taskPrompt(mission, task, mergeState = null, contextKernel = null, rout
     ? "Use the workspace tools only when necessary. Writes, selected verification commands, Git stage, and Git commit always stop for visible, one-time human approval. Use workspace_git to inspect the assigned worktree; Agent Deck creates and assigns worktrees, so never attempt to create or remove one yourself. Your final structured result is persisted automatically; do not claim cross-agent messages or published artifacts that you cannot create."
     : "Use agentdeck.send_message for coordination and agentdeck.publish_artifact for reusable findings.";
   const artifactContract = route.reportTask ? HTML_FIRST_DELIVERABLE : NATIVE_ARTIFACT_CONTRACT;
-  return `You are the ${task.agentRole} worker for an Agent Deck mission.\n\nMISSION OUTCOME\n${mission.outcome}\n\nYOUR TASK ${task.key}: ${task.title}\n${task.description}\n\nVALUE INTENT\nExpected marginal value: ${task.value?.score || 3}/5. Estimated token budget: ${task.value?.estimatedTokenBudget || 6000}. Rationale: ${task.value?.rationale || "Complete a required Mission checkpoint."}\n\nACCEPTANCE CRITERIA\n${task.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nDEPENDENCIES\n${task.dependencies.length ? task.dependencies.join(", ") : "None"}\n\n${kernel}${mergeRecovery}\n\n${FAST_EXECUTION_CONTRACT}\nPerformance route: ${route.id}; reasoning effort: ${route.effort}; tool-batch target: at most ${route.maxToolBatches}.\n\n${artifactContract}\n\n${mission.executionMode === "research" ? "Create research and document deliverables only in the provided managed worktree. Inspect reference material read-only, verify sources, and report evidence." : "Work only inside the provided worktree. Inspect the code, implement the task, run relevant verification, and report evidence."} ${coordination} Do not claim success without command, test, diff, or file evidence.`;
+  const directQuality = mission.spec?.runtime?.mode === "direct" ? `\n\nDIRECT QUALITY CONTRACT\n- You own inspection, implementation, focused tests, and verification in this one worktree. Do not delegate or create planning artifacts.\n- Translate the request into explicit invariants, then derive at least one boundary, invalid-input, or regression probe that is not merely a copy of the visible happy-path test.\n- Prefer the smallest correct patch. Preserve public behavior outside the stated scope.\n- Before reporting success, inspect the final diff and run the narrowest relevant existing test suite plus the derived probe. If the request is ambiguous, make the safest reversible interpretation and state it.\n- Do not create an HTML report unless the user asked for a report; return concise structured evidence.` : "";
+  return `You are the ${task.agentRole} worker for an Agent Deck mission.\n\nMISSION OUTCOME\n${mission.outcome}\n\nYOUR TASK ${task.key}: ${task.title}\n${task.description}\n\nVALUE INTENT\nExpected marginal value: ${task.value?.score || 3}/5. Estimated token budget: ${task.value?.estimatedTokenBudget || 6000}. Rationale: ${task.value?.rationale || "Complete a required Mission checkpoint."}\n\nACCEPTANCE CRITERIA\n${task.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nDEPENDENCIES\n${task.dependencies.length ? task.dependencies.join(", ") : "None"}\n\n${kernel}${mergeRecovery}${directQuality}\n\n${FAST_EXECUTION_CONTRACT}\nPerformance route: ${route.id}; reasoning effort: ${route.effort}; tool-batch target: at most ${route.maxToolBatches}.\n\n${artifactContract}\n\n${mission.executionMode === "research" ? "Create research and document deliverables only in the provided managed worktree. Inspect reference material read-only, verify sources, and report evidence." : "Work only inside the provided worktree. Inspect the code, implement the task, run relevant verification, and report evidence."} ${coordination} Do not claim success without command, test, diff, or file evidence.`;
 }
 
 class MissionOrchestrator extends EventEmitter {
@@ -262,7 +265,8 @@ class MissionOrchestrator extends EventEmitter {
         valueContract: requirement.valueContract,
         executionMode: requirement.executionMode,
       });
-      const linked = this.store.updateRequirement(requirement.id, { missionId: mission.id, status: "planning" });
+      this.store.updateRequirement(requirement.id, { missionId: mission.id, status: "planning" });
+      const linked = this.store.syncRequirementForMission(mission.id, mission.status) || this.store.getRequirement(requirement.id);
       this.#emit(mission.id);
       return { requirement: linked, mission };
     } catch (error) {
@@ -337,16 +341,29 @@ class MissionOrchestrator extends EventEmitter {
 
   async create(input) {
     if (!input.cwd) throw new Error("Choose a local workspace before creating a mission");
-    const mission = this.store.createMission(input);
+    const adaptiveRoute = classifyMissionRequest(input);
+    const mission = this.store.createMission({ ...input, maxWorkers: adaptiveRoute.maxWorkers });
+    this.store.appendEvent(mission.id, "mission.route.selected", adaptiveRoute);
     this.#emit(mission.id);
     try {
+      if (adaptiveRoute.mode === "direct") {
+        this.worktrees.assertReady(this.#executionCwd(mission));
+        const spec = normalizePlan(buildDirectPlan(input, adaptiveRoute));
+        this.store.savePlan(mission.id, spec);
+        this.store.updateMission(mission.id, { status: "running", spec, error: null });
+        this.store.appendEvent(mission.id, "mission.direct.started", { taskCount: 1, plannerSkipped: true, tokenBudget: spec.runtime.tokenBudget });
+        this.store.addMessage({ missionId: mission.id, fromAgent: "Agent Deck", toAgent: "Delivery Agent", topic: "mission.direct", messageType: "command", text: "Adaptive routing selected one coherent worker; planner and coordination turns were skipped.", deliveryStatus: "delivered", source: "scheduler" });
+        this.#emit(mission.id);
+        await this.dispatchReady(mission.id);
+        return this.store.getMission(mission.id);
+      }
       const runtime = this.#runtime(mission);
       const cwd = this.#executionCwd(mission);
       const route = plannerPerformanceRoute();
       const created = await runtime.createThread({ cwd, title: `Mission · ${input.title}`, model: input.model, provider: mission.provider, allowMutations: false });
       this.store.updateMission(mission.id, { mainThreadId: created.thread.id, model: created.model || input.model || null });
       this.store.appendEvent(mission.id, "planner.thread.created", { threadId: created.thread.id }, { threadId: created.thread.id });
-      const prompt = executionPolicy(mission) + missionPlanningPrompt(mission);
+      const prompt = executionPolicy(mission) + missionPlanningPrompt(mission, adaptiveRoute);
       const turn = await runtime.sendTurn({ threadId: created.thread.id, cwd, prompt, model: input.model, effort: route.effort, outputSchema: missionPlanSchema });
       this.store.updateMission(mission.id, { activeTurnId: turn.id });
       this.store.startRun({ missionId: mission.id, agentId: `${mission.id}:main`, threadId: created.thread.id, turnId: turn.id, phase: "planning", triggerType: "mission.create" });
@@ -393,7 +410,8 @@ class MissionOrchestrator extends EventEmitter {
           const latestTask = this.store.getTask(candidate.id);
           const dependencyBranches = candidate.dependencies.map((key) => mission.tasks.find((item) => item.key === key)?.branch).filter(Boolean);
           const worktree = latestTask.worktreePath ? this.worktrees.reuse(latestTask.worktreePath, latestTask.branch, dependencyBranches) : this.worktrees.create({ cwd: this.#executionCwd(mission), missionId, taskKey: candidate.key, baseRefs: dependencyBranches });
-          const route = workerPerformanceRoute(candidate, { mergeConflict: Boolean(worktree.conflict) });
+          const direct = mission.spec?.runtime?.mode === "direct";
+          const route = workerPerformanceRoute(candidate, { mergeConflict: Boolean(worktree.conflict), direct });
           this.store.updateTask(candidate.id, { worktreePath: worktree.path, branch: worktree.branch, phase: "starting" });
           const created = await runtime.createThread({ cwd: worktree.path, title: `${candidate.key} · ${candidate.title}`, model: mission.model, dynamicTools: mission.provider === "codex" ? workerTools : undefined, provider: mission.provider, allowMutations: true });
           this.store.updateTask(candidate.id, { agentThreadId: created.thread.id, status: "running", phase: worktree.conflict ? "resolving_dependencies" : "starting", error: null });
@@ -440,6 +458,11 @@ class MissionOrchestrator extends EventEmitter {
     this.store.addMessage({ missionId, fromAgent: "You", toAgent: task.agentRole, topic: "task.verified", messageType: "event", text: `${task.key} accepted after review.`, deliveryStatus: "delivered", source: "user" });
     let mission = this.store.getMission(missionId);
     if (mission.tasks.every((item) => item.status === "completed")) {
+      if (mission.spec?.runtime?.mode === "direct" && mission.spec?.runtime?.autoIntegrateAfterReview) {
+        this.store.appendEvent(missionId, "mission.direct.auto_integrating", { verifiedTasks: mission.tasks.length });
+        this.#emit(missionId);
+        return this.integrate(missionId);
+      }
       this.store.updateMission(missionId, { status: "ready_to_integrate", error: null });
       this.store.appendEvent(missionId, "mission.ready_to_integrate", { verifiedTasks: mission.tasks.length });
     } else {
@@ -541,7 +564,7 @@ class MissionOrchestrator extends EventEmitter {
               const route = plannerPerformanceRoute();
               turn = await runtime.sendTurn({
                 threadId, cwd: this.#executionCwd(latestMission), model: latestMission.model,
-                prompt: executionPolicy(latestMission) + (retryPlanning ? `${missionPlanningPrompt(latestMission)}\n\nUSER RETRY INSTRUCTION\n${message}` : mainAgentFollowupPrompt(message)),
+                prompt: executionPolicy(latestMission) + (retryPlanning ? `${missionPlanningPrompt(latestMission, classifyMissionRequest({ ...latestMission, orchestrationMode: "mission" }))}\n\nUSER RETRY INSTRUCTION\n${message}` : mainAgentFollowupPrompt(message)),
                 effort: route.effort,
                 outputSchema: retryPlanning ? missionPlanSchema : mainAgentFollowupSchema,
               });
@@ -556,7 +579,7 @@ class MissionOrchestrator extends EventEmitter {
           if (!latestTask?.agentThreadId) throw new Error("This worker no longer has a real Codex thread");
           if (latestTask.activeTurnId && latestTask.status === "running") await runtime.steer({ threadId, turnId: latestTask.activeTurnId, prompt: message });
           else {
-            const route = workerPerformanceRoute(latestTask);
+            const route = workerPerformanceRoute(latestTask, { direct: latestMission.spec?.runtime?.mode === "direct" });
             const artifactContract = route.reportTask ? HTML_FIRST_DELIVERABLE : NATIVE_ARTIFACT_CONTRACT;
             const turn = await runtime.sendTurn({ threadId, cwd: latestTask.worktreePath, prompt: `${executionPolicy(latestMission)}${message}\n\n${FAST_EXECUTION_CONTRACT}\n\n${artifactContract}`, effort: route.effort, outputSchema: taskResultSchema });
             this.store.updateTask(latestTask.id, { status: "running", phase: "working", activeTurnId: turn.id, error: null });
@@ -631,8 +654,10 @@ class MissionOrchestrator extends EventEmitter {
       const acceptsLatePlan = !mission.spec && (mission.status === "planning" || (mission.status === "failed" && /Planner completed without a valid structured mission/i.test(mission.error || "")));
       if (acceptsLatePlan) {
         try {
-          const spec = normalizePlan(parseStructuredText(item.text));
+          const route = classifyMissionRequest({ ...mission, orchestrationMode: "mission" });
+          const spec = optimizeMissionPlan(normalizePlan(parseStructuredText(item.text)), route, mission.valueContract?.tokenBudget);
           this.store.savePlan(mission.id, spec);
+          this.store.appendEvent(mission.id, "mission.plan.optimized", { route: route.tier, taskCount: spec.tasks.length, repairedDependencyEdges: spec.runtime.repairedDependencyEdges, plannedTaskTokens: spec.runtime.plannedTaskTokens, tokenBudget: spec.runtime.tokenBudget }, { threadId });
           this.store.addArtifact({ missionId: mission.id, title: "Generated requirement candidate", summary: spec.outcome, files: [], verificationStatus: "generated", sourceThreadId: threadId });
         } catch (error) {
           this.store.appendEvent(mission.id, "planner.output.rejected", { message: error.message, itemId: item.id }, { threadId });

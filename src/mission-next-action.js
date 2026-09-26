@@ -42,8 +42,8 @@ export function nextMissionAction(mission) {
     };
     return {
       kind: "review", task, tone: "review", icon: "review",
-      title: "一份 Worker 结果等待验收",
-      detail: `${task.key} 已返回结果。先审阅证据与产物，再选择接受或要求修改。`,
+      title: mission.spec?.runtime?.mode === "direct" ? "直通任务已完成，等待一次验收" : "一份 Worker 结果等待验收",
+      detail: mission.spec?.runtime?.mode === "direct" ? `${task.key} 已返回实现与边界验证证据。接受后会自动集成，无需再经过汇总确认。` : `${task.key} 已返回结果。先审阅证据与产物，再选择接受或要求修改。`,
       primaryLabel: "审阅结果", secondaryLabel: "查看任务", panel: "result",
     };
   }
