@@ -854,7 +854,11 @@ class MissionOrchestrator extends EventEmitter {
     const { recordAttached = true, recordFailure = true } = options;
     try {
       const runtime = this.#runtime(mission);
-      await runtime.resumeThread(threadId, task?.worktreePath || this.#executionCwd(mission));
+      try {
+        await runtime.resumeThread(threadId, task?.worktreePath || this.#executionCwd(mission));
+      } catch (error) {
+        if (!/already has an active writer/i.test(error.message || "")) throw error;
+      }
       const thread = await runtime.readThread(threadId, true);
       const turn = (thread.turns || []).find((item) => item.id === turnId) || thread.turns?.at(-1);
       if (!turn || turn.status === "inProgress") {

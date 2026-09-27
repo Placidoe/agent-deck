@@ -992,7 +992,7 @@ test("active reconciliation closes a missed interrupted turn instead of leaving 
   store.startRun({ missionId: mission.id, taskId: task.id, agentId: `${mission.id}:${task.key}`, threadId: "worker-stale", turnId: "turn-stale", phase: "working", triggerType: "user.message" });
   let reads = 0;
   const codex = {
-    async resumeThread() {},
+    async resumeThread() { throw new Error("thread worker-stale already has an active writer"); },
     async readThread() {
       reads += 1;
       return { status: { type: "idle" }, turns: [{ id: "turn-stale", status: "interrupted", error: null, items: [] }] };
