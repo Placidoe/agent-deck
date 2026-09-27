@@ -21,6 +21,11 @@ if (!Number.isFinite(timeoutMs) || timeoutMs < 1000) throw new Error(`Invalid CO
 const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), `codex-${caseId.toLowerCase()}-control-`));
 const repository = path.join(scratchRoot, "repo");
 const client = new CodexAppServer();
+const approvalMethods = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "item/gitOperation/requestApproval",
+]);
 
 function run(command, args, options = {}) {
   const startedAt = performance.now();
@@ -60,6 +65,7 @@ async function main() {
   const created = await client.createThread({ cwd: repository, title: `CONTROL · ${caseId} ${benchmarkCase.title}`, model: "gpt-5.6-terra" });
   const threadId = created.thread.id;
   const events = [];
+  let approvalCount = 0;
   let finalText = "";
   let activeTurnId = null;
   let timer;
@@ -71,6 +77,10 @@ async function main() {
     client.on("event", (event) => {
       if (event.params?.threadId !== threadId) return;
       events.push(event);
+      if (approvalMethods.has(event.method) && event.id != null) {
+        approvalCount += 1;
+        client.respondToApproval({ requestId: event.id, decision: "accept" });
+      }
       if (event.method === "item/agentMessage/delta") finalText += event.params?.delta || "";
       if (event.method === "item/completed" && event.params?.item?.type === "agentMessage" && event.params.item.text) finalText = event.params.item.text;
       if (event.method === "error") reject(new Error(event.params?.error?.message || "Codex control failed"));
@@ -121,7 +131,7 @@ async function main() {
       deterministicScoreMax: 80,
       publicChecksPassed: publicPassed, publicChecksTotal: publicTotal,
       hiddenChecksPassed: hiddenPassed, hiddenChecksTotal: hiddenTotal,
-      humanTouches: 0, workerCount: 1,
+      humanTouches: approvalCount, workerCount: 1,
       providerTokens: usage?.total_tokens || usage?.totalTokens || null,
       toolEvents: events.filter((event) => ["item/started", "item/completed"].includes(event.method) && ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall"].includes(event.params?.item?.type)).length,
       graderSec: Number(((publicChecks.durationMs + hiddenChecks.durationMs) / 1000).toFixed(3)),
@@ -132,7 +142,7 @@ async function main() {
     evidence: {
       finalText: finalText.slice(0, 12000),
       diff,
-      eventSummary: events.map((event) => ({
+      eventSummary: events.filter((event) => !event.method.endsWith("/delta") && event.method !== "thread/tokenUsage/updated").map((event) => ({
         method: event.method,
         itemType: event.params?.item?.type || null,
         itemStatus: event.params?.item?.status || null,
@@ -140,7 +150,7 @@ async function main() {
     },
   };
   fs.mkdirSync(resultDirectory, { recursive: true });
-  const outputPath = process.env.AGENT_DECK_EVAL_OUTPUT || path.join(resultDirectory, `${caseId.toLowerCase()}-control-${safeTimestamp()}.json`);
+  const outputPath = process.env.AGENT_DECK_EVAL_OUTPUT || path.join(resultDirectory, `${caseId.toLowerCase()}-control-${reasoningEffort}-${safeTimestamp()}.json`);
   fs.writeFileSync(outputPath, `${JSON.stringify(result, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify({ ...result, checks: undefined, evidence: { diffFiles: diff.match(/^diff --git/gm)?.length || 0 }, outputPath }, null, 2)}\n`);
   if (result.status !== "passed") process.exitCode = 1;

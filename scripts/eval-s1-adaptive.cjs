@@ -21,6 +21,11 @@ const resultDirectory = path.join(evalRoot, "results");
 const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), `agent-deck-${caseId.toLowerCase()}-adaptive-`));
 const repository = path.join(scratchRoot, "repo");
 const client = new CodexAppServer();
+const approvalMethods = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "item/gitOperation/requestApproval",
+]);
 
 const taskBrief = benchmarkCase.taskBrief;
 
@@ -99,7 +104,12 @@ async function main() {
   const worktrees = new WorktreeManager(path.join(scratchRoot, "worktrees"));
   const orchestrator = new MissionOrchestrator({ codex: client, store, worktrees });
   const eventErrors = [];
+  let approvalCount = 0;
   client.on("event", (event) => {
+    if (approvalMethods.has(event.method) && event.id != null) {
+      approvalCount += 1;
+      client.respondToApproval({ requestId: event.id, decision: "accept" });
+    }
     orchestrator.handleCodexEvent(event).catch((error) => eventErrors.push(error));
   });
 
@@ -177,7 +187,7 @@ async function main() {
       publicChecksTotal: publicTotal,
       hiddenChecksPassed: hiddenPassed,
       hiddenChecksTotal: hiddenTotal,
-      humanTouches: 1,
+      humanTouches: 1 + approvalCount,
       workerCount: completed.tasks.filter((item) => item.agentThreadId).length,
       plannerTurns: completed.events.filter((event) => event.type === "planner.turn.started").length,
       providerTokens: ledger.costs.tokenSource === "provider_reported" ? ledger.costs.billedTokens : null,
