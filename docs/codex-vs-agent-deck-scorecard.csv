@@ -1,6 +1,7 @@
 case_id,difficulty,group,run_order,model,reasoning_effort,started_at,t_ack_sec,t_effect_sec,t_claim_sec,t_green_sec,quality_score,hidden_checks_passed,hidden_checks_total,regression_status,human_touches,human_active_min,rework_turns,provider_tokens,estimated_tokens,tool_calls,worker_count,status,notes
 S1,simple,direct_codex,1,gpt-5.6-terra,high,2026-09-26T20:20:29Z,,,69.19,69.3,100,7,7,pass,0,0,0,147975,,6,1,passed,"Public 5/5 and hidden 7/7; scoped implementation and focused tests."
 S1,simple,agent_deck,2,gpt-5.6-terra,product_routed,2026-09-26T20:25:00Z,,90.6,1315.6,,83,6,7,public_pass_hidden_fail,9,,1,,,35,4,failed_hidden,"Mission reported Completed and public 5/5, but hidden rejected decimal/partially numeric input; over-decomposed into 4 workers and required dependency repair."
+S1,simple,agent_deck_adaptive,3,gpt-5.6-terra,high,2026-09-27T06:06:04Z,,,184.925,188.262,,7,7,pass,1,,0,,1032,,1,passed,"Deterministic score 80/80; full manual quality score pending. Public 8/8 and hidden 7/7. Zero Planner turns, one Worker, one acceptance and automatic integration. Token count is a local estimate and is not comparable to the provider-reported control value."
 S2,simple,agent_deck,1,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,
 S2,simple,direct_codex,2,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,
 S3,simple,direct_codex,1,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,

@@ -196,6 +196,22 @@ Return a concise user-facing message plus tasksToCreate. Use an empty tasksToCre
 }
 
 function taskPrompt(mission, task, mergeState = null, contextKernel = null, route = workerPerformanceRoute(task, { mergeConflict: Boolean(mergeState?.conflict) })) {
+  if (mission.spec?.runtime?.mode === "direct") {
+    return `Complete this repository task directly. Keep implementation and verification in this one context; do not delegate, create planning artifacts, or narrate routine work.
+
+TASK
+${mission.sourcePrompt || mission.outcome}
+
+EXPECTED OUTCOME
+${mission.outcome}
+
+ACCEPTANCE
+${task.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}
+
+Before editing, use a compact behavior matrix to cover canonical valid inputs, boundary-valid inputs, near-miss invalid inputs, unsupported types, normalization rules, and public compatibility. For parser, validator, serializer, or CLI work, explicitly check whitespace, empty input, lexical strictness versus partial parsing, alternate numeric forms, type coercion, and exact API/signature compatibility when applicable.
+
+Inspect the existing implementation and tests, make the smallest correct patch, add focused request-derived regression tests, run the narrowest relevant suite, and inspect the final diff. Stop when the acceptance criteria have concrete evidence. Do not create an HTML report unless requested.`;
+  }
   const shared = (mission.artifacts || []).map((artifact) => `- ${artifact.title} [${artifact.verificationStatus}]: ${artifact.summary}`).join("\n") || "No shared artifacts yet.";
   const mergeRecovery = mergeState?.conflict ? `\n\nPRE-EXECUTION DEPENDENCY MERGE RECOVERY\nThis real worktree contains an unfinished dependency merge:\n${mergeState.conflict}\n\nDependency branches that are not yet ancestors of HEAD:\n${mergeState.pendingRefs.map((item) => `- ${item}`).join("\n") || "- Inspect MERGE_HEAD and git status"}\n\nBefore the main task, inspect git status and resolve the conflict semantically. Preserve the valid contributions from every dependency; do not abort the merge, reset the worktree, or discard either side. Stage the resolution and complete the merge commit. Then merge every remaining dependency branch above one at a time, resolving and committing any further conflicts. Verify each with git merge-base --is-ancestor <branch> HEAD. Only then continue the assigned task.` : "";
   const kernel = contextKernel?.runtimePrompt || `SHARED CONTEXT SNAPSHOT\n${shared}`;
@@ -203,8 +219,7 @@ function taskPrompt(mission, task, mergeState = null, contextKernel = null, rout
     ? "Use the workspace tools only when necessary. Writes, selected verification commands, Git stage, and Git commit always stop for visible, one-time human approval. Use workspace_git to inspect the assigned worktree; Agent Deck creates and assigns worktrees, so never attempt to create or remove one yourself. Your final structured result is persisted automatically; do not claim cross-agent messages or published artifacts that you cannot create."
     : "Use agentdeck.send_message for coordination and agentdeck.publish_artifact for reusable findings.";
   const artifactContract = route.reportTask ? HTML_FIRST_DELIVERABLE : NATIVE_ARTIFACT_CONTRACT;
-  const directQuality = mission.spec?.runtime?.mode === "direct" ? `\n\nDIRECT QUALITY CONTRACT\n- You own inspection, implementation, focused tests, and verification in this one worktree. Do not delegate or create planning artifacts.\n- Translate the request into explicit invariants, then derive at least one boundary, invalid-input, or regression probe that is not merely a copy of the visible happy-path test.\n- Prefer the smallest correct patch. Preserve public behavior outside the stated scope.\n- Before reporting success, inspect the final diff and run the narrowest relevant existing test suite plus the derived probe. If the request is ambiguous, make the safest reversible interpretation and state it.\n- Do not create an HTML report unless the user asked for a report; return concise structured evidence.` : "";
-  return `You are the ${task.agentRole} worker for an Agent Deck mission.\n\nMISSION OUTCOME\n${mission.outcome}\n\nYOUR TASK ${task.key}: ${task.title}\n${task.description}\n\nVALUE INTENT\nExpected marginal value: ${task.value?.score || 3}/5. Estimated token budget: ${task.value?.estimatedTokenBudget || 6000}. Rationale: ${task.value?.rationale || "Complete a required Mission checkpoint."}\n\nACCEPTANCE CRITERIA\n${task.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nDEPENDENCIES\n${task.dependencies.length ? task.dependencies.join(", ") : "None"}\n\n${kernel}${mergeRecovery}${directQuality}\n\n${FAST_EXECUTION_CONTRACT}\nPerformance route: ${route.id}; reasoning effort: ${route.effort}; tool-batch target: at most ${route.maxToolBatches}.\n\n${artifactContract}\n\n${mission.executionMode === "research" ? "Create research and document deliverables only in the provided managed worktree. Inspect reference material read-only, verify sources, and report evidence." : "Work only inside the provided worktree. Inspect the code, implement the task, run relevant verification, and report evidence."} ${coordination} Do not claim success without command, test, diff, or file evidence.`;
+  return `You are the ${task.agentRole} worker for an Agent Deck mission.\n\nMISSION OUTCOME\n${mission.outcome}\n\nYOUR TASK ${task.key}: ${task.title}\n${task.description}\n\nVALUE INTENT\nExpected marginal value: ${task.value?.score || 3}/5. Estimated token budget: ${task.value?.estimatedTokenBudget || 6000}. Rationale: ${task.value?.rationale || "Complete a required Mission checkpoint."}\n\nACCEPTANCE CRITERIA\n${task.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nDEPENDENCIES\n${task.dependencies.length ? task.dependencies.join(", ") : "None"}\n\n${kernel}${mergeRecovery}\n\n${FAST_EXECUTION_CONTRACT}\nPerformance route: ${route.id}; reasoning effort: ${route.effort}; tool-batch target: at most ${route.maxToolBatches}.\n\n${artifactContract}\n\n${mission.executionMode === "research" ? "Create research and document deliverables only in the provided managed worktree. Inspect reference material read-only, verify sources, and report evidence." : "Work only inside the provided worktree. Inspect the code, implement the task, run relevant verification, and report evidence."} ${coordination} Do not claim success without command, test, diff, or file evidence.`;
 }
 
 class MissionOrchestrator extends EventEmitter {
@@ -413,7 +428,11 @@ class MissionOrchestrator extends EventEmitter {
           const direct = mission.spec?.runtime?.mode === "direct";
           const route = workerPerformanceRoute(candidate, { mergeConflict: Boolean(worktree.conflict), direct });
           this.store.updateTask(candidate.id, { worktreePath: worktree.path, branch: worktree.branch, phase: "starting" });
-          const created = await runtime.createThread({ cwd: worktree.path, title: `${candidate.key} · ${candidate.title}`, model: mission.model, dynamicTools: mission.provider === "codex" ? workerTools : undefined, provider: mission.provider, allowMutations: true });
+          const created = await runtime.createThread({ cwd: worktree.path, title: `${candidate.key} · ${candidate.title}`, model: mission.model, dynamicTools: mission.provider === "codex" && !direct ? workerTools : undefined, provider: mission.provider, allowMutations: true });
+          if (created.model && !mission.model) {
+            this.store.updateMission(missionId, { model: created.model });
+            mission = this.store.getMission(missionId);
+          }
           this.store.updateTask(candidate.id, { agentThreadId: created.thread.id, status: "running", phase: worktree.conflict ? "resolving_dependencies" : "starting", error: null });
           this.store.addMessage({ missionId, fromAgent: "Main Agent", toAgent: candidate.agentRole, topic: "task.assigned", messageType: "command", text: `${candidate.key}: ${candidate.title}`, deliveryStatus: "delivered", source: "scheduler" });
           if (worktree.conflict) this.store.appendEvent(missionId, "worker.merge_resolution.started", { taskKey: candidate.key, message: worktree.conflict, pendingRefs: worktree.pendingRefs || [] }, { taskId: candidate.id, threadId: created.thread.id });

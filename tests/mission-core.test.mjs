@@ -748,11 +748,15 @@ test("adaptive direct mode skips the planner and auto-integrates after one human
   assert.equal(created.mainThreadId, null);
   assert.equal(created.tasks.length, 1);
   assert.equal(created.tasks[0].status, "running");
+  assert.equal(created.model, "test-model");
   assert.equal(calls.filter(call => call.kind === "thread").length, 1);
   assert.equal(calls.filter(call => call.kind === "turn").length, 1);
   assert.equal(calls.find(call => call.kind === "turn").input.effort, "high");
-  assert.match(calls.find(call => call.kind === "turn").input.prompt, /DIRECT QUALITY CONTRACT/);
+  assert.match(calls.find(call => call.kind === "turn").input.prompt, /Complete this repository task directly/);
   assert.match(calls.find(call => call.kind === "turn").input.prompt, /invalid-input|boundary/i);
+  assert.match(calls.find(call => call.kind === "turn").input.prompt, /behavior matrix/);
+  assert.match(calls.find(call => call.kind === "turn").input.prompt, /whitespace.*lexical strictness/s);
+  assert.equal(calls.find(call => call.kind === "thread").input.dynamicTools, undefined);
   const task = created.tasks[0];
   fs.writeFileSync(path.join(task.worktreePath, "parser.js"), "export const parse = value => typeof value === 'string' && /^\\d+(?:\\.\\d+)?$/.test(value) ? null : value;\n");
   const result = { summary: "Parser fixed and boundary checked", acceptance: task.acceptanceCriteria.map(criterion => ({ criterion, passed: true, evidence: "focused test exited 0" })), changedFiles: ["parser.js"], blockers: [] };
