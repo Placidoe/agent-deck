@@ -982,6 +982,43 @@ test("orchestrator recovery replays a completed Codex turn that finished while t
   assert.equal(recovered.result.observedChanges.files[0], "src/recovered.js");
 }));
 
+test("active reconciliation closes a missed interrupted turn instead of leaving the DAG running forever", async () => withTempDirAsync(async (directory) => {
+  const store = new MissionStore(path.join(directory, "agent-deck.sqlite3"));
+  const mission = store.createMission({ title: "Reconcile", outcome: "Converge on provider truth", cwd: directory });
+  store.savePlan(mission.id, normalizePlan({ ...validPlan, tasks: [validPlan.tasks[0]] }));
+  const task = store.getMission(mission.id).tasks[0];
+  store.updateMission(mission.id, { status: "running" });
+  store.updateTask(task.id, { status: "running", phase: "coordinating", agentThreadId: "worker-stale", activeTurnId: "turn-stale", worktreePath: directory, branch: "agentdeck/stale" });
+  store.startRun({ missionId: mission.id, taskId: task.id, agentId: `${mission.id}:${task.key}`, threadId: "worker-stale", turnId: "turn-stale", phase: "working", triggerType: "user.message" });
+  let reads = 0;
+  const codex = {
+    async resumeThread() {},
+    async readThread() {
+      reads += 1;
+      return { status: { type: "idle" }, turns: [{ id: "turn-stale", status: "interrupted", error: null, items: [] }] };
+    },
+  };
+  const orchestrator = new MissionOrchestrator({ codex, store, worktrees: {} });
+
+  const first = await orchestrator.reconcileActive();
+  const reconciled = store.getMission(mission.id);
+  assert.deepEqual(first, { checked: 1, reconciled: 1 });
+  assert.equal(reads, 1);
+  assert.equal(reconciled.status, "blocked");
+  assert.equal(reconciled.tasks[0].status, "blocked");
+  assert.equal(reconciled.tasks[0].phase, "interrupted");
+  assert.equal(reconciled.tasks[0].activeTurnId, null);
+  assert.equal(reconciled.runs[0].status, "interrupted");
+  assert.ok(reconciled.runs[0].endedAt);
+  assert.equal(reconciled.events.some((event) => event.type === "provider.turn/completed"), true);
+  assert.equal(reconciled.events.some((event) => event.type === "recovery.thread.replayed"), true);
+  assert.equal(reconciled.events.some((event) => event.type === "recovery.thread.attached"), false);
+
+  const second = await orchestrator.reconcileActive();
+  assert.deepEqual(second, { checked: 0, reconciled: 0 });
+  assert.equal(reads, 1);
+}));
+
 test("duplicate and out-of-order provider events converge without duplicate evidence", async () => withTempDirAsync(async (directory) => {
   const store = new MissionStore(path.join(directory, "provider-order.sqlite3"));
   const mission = store.createMission({ title: "Provider ordering", outcome: "Converge on truth", cwd: directory });

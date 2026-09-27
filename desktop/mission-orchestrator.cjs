@@ -229,6 +229,7 @@ class MissionOrchestrator extends EventEmitter {
     this.updateTimers = new Map();
     this.updateRevisions = new Map();
     this.processingEvents = new Set();
+    this.activeReconciliation = null;
     // A thread accepts one active turn at a time. Queue transport per thread so
     // rapid interventions stay ordered without freezing the renderer.
     this.messageQueues = new Map();
@@ -346,6 +347,25 @@ class MissionOrchestrator extends EventEmitter {
           await this.#recoverThread(mission, task, task.agentThreadId, task.activeTurnId);
         }
       }
+    }
+  }
+
+  async reconcileActive() {
+    if (this.activeReconciliation) return this.activeReconciliation;
+    this.activeReconciliation = (async () => {
+      let checked = 0;
+      let reconciled = 0;
+      for (const target of this.store.listActiveTurnRefs()) {
+        checked += 1;
+        const result = await this.#recoverThread(target.mission, target.task, target.threadId, target.turnId, { recordAttached: false, recordFailure: false });
+        if (result?.terminal) reconciled += 1;
+      }
+      return { checked, reconciled };
+    })();
+    try {
+      return await this.activeReconciliation;
+    } finally {
+      this.activeReconciliation = null;
     }
   }
 
@@ -762,8 +782,10 @@ class MissionOrchestrator extends EventEmitter {
         this.store.updateMission(mission.id, { status: anyActive ? "running" : "review" });
       } else if (status === "interrupted") {
         this.store.updateTask(task.id, { status: "blocked", phase: "interrupted", activeTurnId: null, error: "Worker turn was interrupted" });
+        this.store.updateMission(mission.id, { status: this.store.hasActiveTasks(mission.id) ? "running" : "blocked" });
       } else {
         this.store.updateTask(task.id, { status: "blocked", phase: "failed", activeTurnId: null, error: event.params?.turn?.error?.message || `Worker turn ${status}` });
+        this.store.updateMission(mission.id, { status: this.store.hasActiveTasks(mission.id) ? "running" : "blocked" });
       }
     }
     if (event.method === "item/commandExecution/requestApproval" || event.method === "item/fileChange/requestApproval" || event.method === "item/gitOperation/requestApproval") {
@@ -828,16 +850,19 @@ class MissionOrchestrator extends EventEmitter {
     }
   }
 
-  async #recoverThread(mission, task, threadId, turnId) {
+  async #recoverThread(mission, task, threadId, turnId, options = {}) {
+    const { recordAttached = true, recordFailure = true } = options;
     try {
       const runtime = this.#runtime(mission);
       await runtime.resumeThread(threadId, task?.worktreePath || this.#executionCwd(mission));
       const thread = await runtime.readThread(threadId, true);
       const turn = (thread.turns || []).find((item) => item.id === turnId) || thread.turns?.at(-1);
       if (!turn || turn.status === "inProgress") {
-        this.store.appendEvent(mission.id, "recovery.thread.attached", { threadId, turnId: turn?.id || turnId, status: turn?.status || thread.status?.type }, { taskId: task?.id, threadId });
-        this.#emit(mission.id);
-        return;
+        if (recordAttached) {
+          this.store.appendEvent(mission.id, "recovery.thread.attached", { threadId, turnId: turn?.id || turnId, status: turn?.status || thread.status?.type }, { taskId: task?.id, threadId });
+          this.#emit(mission.id);
+        }
+        return { terminal: false, status: turn?.status || thread.status?.type || "unknown" };
       }
       if (turn.status === "completed") {
         for (const item of turn.items || []) {
@@ -847,6 +872,7 @@ class MissionOrchestrator extends EventEmitter {
       await this.handleCodexEvent({ method: "turn/completed", params: { threadId, turn } });
       this.store.appendEvent(mission.id, "recovery.thread.replayed", { threadId, turnId: turn.id, status: turn.status }, { taskId: task?.id, threadId });
       this.#emit(mission.id);
+      return { terminal: true, status: turn.status };
     } catch (error) {
       if (["deepseek", "openai_compatible"].includes(mission.provider)) {
         const restartMessage = "This API worker was stopped by an Agent Deck restart. Its durable messages and evidence remain available; retry it to start a fresh controlled API turn.";
@@ -856,8 +882,11 @@ class MissionOrchestrator extends EventEmitter {
         this.#emit(mission.id);
         return;
       }
-      this.store.appendEvent(mission.id, "recovery.thread.failed", { threadId, message: error.message }, { taskId: task?.id, threadId });
-      this.#emit(mission.id);
+      if (recordFailure) {
+        this.store.appendEvent(mission.id, "recovery.thread.failed", { threadId, message: error.message }, { taskId: task?.id, threadId });
+        this.#emit(mission.id);
+      }
+      return { terminal: false, status: "unavailable", error: error.message };
     }
   }
 

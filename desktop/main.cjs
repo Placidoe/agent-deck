@@ -22,6 +22,7 @@ let publisherService = null;
 let providerRegistry = null;
 let apiRuntime = null;
 let adapterHost = null;
+let missionReconcileTimer = null;
 const isPrimaryInstance = app.requestSingleInstanceLock();
 if (!isPrimaryInstance) app.quit();
 
@@ -415,6 +416,13 @@ app.whenReady().then(() => {
   createWindow();
   missionOrchestrator.recover().catch((error) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("mission:error", { message: `Mission recovery failed: ${error.message}` });
+  }).finally(() => {
+    missionReconcileTimer = setInterval(() => {
+      missionOrchestrator?.reconcileActive().catch((error) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("mission:error", { message: `Mission state check failed: ${error.message}` });
+      });
+    }, 30_000);
+    missionReconcileTimer.unref?.();
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -426,6 +434,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  if (missionReconcileTimer) clearInterval(missionReconcileTimer);
   codex.stop();
   missionStore?.close();
 });

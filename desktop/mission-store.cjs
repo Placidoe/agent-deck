@@ -679,6 +679,24 @@ class MissionStore {
     return Boolean(row?.active);
   }
 
+  listActiveTurnRefs() {
+    const rows = this.#all(`
+      SELECT id AS mission_id,NULL AS task_id,main_thread_id AS thread_id,active_turn_id AS turn_id
+      FROM missions
+      WHERE main_thread_id IS NOT NULL AND active_turn_id IS NOT NULL
+      UNION ALL
+      SELECT mission_id,id AS task_id,agent_thread_id AS thread_id,active_turn_id AS turn_id
+      FROM tasks
+      WHERE status IN ('running','waiting_approval') AND agent_thread_id IS NOT NULL AND active_turn_id IS NOT NULL;
+    `);
+    return rows.map((row) => ({
+      mission: this.getMissionRecord(row.mission_id),
+      task: row.task_id ? this.getTask(row.task_id) : null,
+      threadId: row.thread_id,
+      turnId: row.turn_id,
+    })).filter((entry) => entry.mission && entry.threadId && entry.turnId);
+  }
+
   listMissions(options = {}) {
     if (options.detailed) {
       return this.#all("SELECT * FROM missions ORDER BY created_at DESC;").map((row) => this.#snapshot(row, options));
