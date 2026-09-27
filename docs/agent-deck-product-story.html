@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Agent Deck 是一款 macOS-first、local-first 的智能工作桌面，把 AI 对话变成可规划、可执行、可验收、可复用、可计算价值的真实工作。">
+  <title>Agent Deck — 让每一次 Agent 对话，都走向一个可验证的结果</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b0f;
+      --panel: rgba(22, 27, 35, .76);
+      --panel-strong: #151a22;
+      --line: rgba(255,255,255,.10);
+      --line-strong: rgba(255,255,255,.17);
+      --text: #f4f7fb;
+      --muted: #98a2b3;
+      --soft: #c7cfda;
+      --blue: #61a8ff;
+      --cyan: #55d6d2;
+      --green: #6be58f;
+      --amber: #f4bd5b;
+      --violet: #a995ff;
+      --max: 1160px;
+      --radius: 24px;
+      --shadow: 0 28px 80px rgba(0,0,0,.42);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% -8%, rgba(45, 117, 255, .18), transparent 32rem),
+        radial-gradient(circle at 92% 22%, rgba(75, 219, 193, .10), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.72;
+      letter-spacing: .01em;
+    }
+    a { color: inherit; text-decoration: none; }
+    .noise {
+      position: fixed; inset: 0; pointer-events: none; opacity: .025; z-index: -1;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
+    }
+    .nav {
+      position: sticky; top: 0; z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: rgba(8,11,15,.72);
+      backdrop-filter: blur(22px) saturate(140%);
+      -webkit-backdrop-filter: blur(22px) saturate(140%);
+    }
+    .nav-inner {
+      width: min(var(--max), calc(100% - 40px)); margin: auto;
+      min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 720; letter-spacing: -.02em; }
+    .brand-mark {
+      width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+      background: linear-gradient(145deg, rgba(97,168,255,.28), rgba(85,214,210,.12));
+      border: 1px solid rgba(97,168,255,.42); box-shadow: inset 0 1px rgba(255,255,255,.14);
+    }
+    .brand-mark svg { width: 20px; height: 20px; }
+    .nav-links { display: flex; gap: 24px; color: var(--muted); font-size: 14px; }
+    .nav-links a:hover { color: var(--text); }
+    main { overflow: hidden; }
+    .wrap { width: min(var(--max), calc(100% - 40px)); margin: auto; }
+    .hero { padding: 104px 0 80px; text-align: center; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 9px; color: #b9d8ff; font-size: 13px; font-weight: 680;
+      letter-spacing: .14em; text-transform: uppercase; border: 1px solid rgba(97,168,255,.25);
+      background: rgba(97,168,255,.08); padding: 7px 12px; border-radius: 999px;
+    }
+    .eyebrow::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 14px var(--green); }
+    h1 { margin: 30px auto 22px; max-width: 980px; font-size: clamp(46px, 7.2vw, 88px); line-height: 1.03; letter-spacing: -.055em; font-weight: 760; }
+    .gradient { background: linear-gradient(105deg, #fff 12%, #a8cbff 52%, #7fe2d4 88%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lead { max-width: 780px; margin: 0 auto; color: var(--soft); font-size: clamp(18px, 2.1vw, 24px); line-height: 1.6; }
+    .hero-actions { margin-top: 34px; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    .button { padding: 12px 19px; border-radius: 12px; border: 1px solid var(--line-strong); font-weight: 650; font-size: 14px; background: rgba(255,255,255,.05); }
+    .button.primary { background: #eaf3ff; color: #0c121a; border-color: transparent; box-shadow: 0 10px 38px rgba(97,168,255,.20); }
+    .hero-visual { margin-top: 68px; padding: 1px; border-radius: 30px; background: linear-gradient(145deg, rgba(97,168,255,.5), rgba(255,255,255,.08) 38%, rgba(85,214,210,.28)); box-shadow: var(--shadow); }
+    .window { background: rgba(13,17,23,.94); border-radius: 29px; overflow: hidden; }
+    .window-bar { height: 48px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.025); }
+    .traffic { display: flex; gap: 8px; }
+    .traffic i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1){background:#ff665f}.traffic i:nth-child(2){background:#f5bd4f}.traffic i:nth-child(3){background:#59c657}
+    .window-title { margin: auto; transform: translateX(-27px); color: #aab3c0; font-size: 13px; font-weight: 650; }
+    .deck { min-height: 470px; display: grid; grid-template-columns: 190px 1fr 260px; text-align: left; }
+    .sidebar, .inspector { background: rgba(255,255,255,.018); padding: 22px 16px; }
+    .sidebar { border-right: 1px solid var(--line); }
+    .inspector { border-left: 1px solid var(--line); }
+    .mini-label { color: #748094; font: 650 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; }
+    .mini-title { margin: 8px 0 18px; font-size: 18px; font-weight: 700; }
+    .task-card { border: 1px solid var(--line); border-radius: 12px; padding: 13px; margin: 10px 0; color: #d7dde7; font-size: 12px; background: rgba(255,255,255,.025); }
+    .task-card.active { border-color: rgba(97,168,255,.5); background: rgba(97,168,255,.10); }
+    .task-card span { display: block; margin-top: 6px; color: #778397; font-size: 10px; }
+    .canvas { position: relative; padding: 22px; background-image: radial-gradient(rgba(255,255,255,.08) 1px, transparent 1px); background-size: 18px 18px; }
+    .canvas-head { display: flex; justify-content: space-between; align-items: center; color: #9ca7b7; font-size: 12px; }
+    .nodes { position: absolute; inset: 72px 26px 24px; }
+    .node { position: absolute; width: 160px; border: 1px solid rgba(107,229,143,.34); background: rgba(19,36,27,.88); border-radius: 13px; padding: 12px; font-size: 11px; box-shadow: 0 14px 30px rgba(0,0,0,.18); }
+    .node strong { display:block; font-size: 12px; margin-bottom: 3px; }.node small { color:#7f8b9c }
+    .node.main { left: 35%; top: 0; border-color: rgba(97,168,255,.46); background: rgba(20,35,53,.92); }
+    .node.n1 { left: 2%; top: 34%; }.node.n2 { left: 36%; top: 34%; }.node.n3 { right: 2%; top: 34%; }.node.n4 { left: 36%; bottom: 4%; border-color: rgba(169,149,255,.4); background: rgba(34,29,51,.9); }
+    .connector { position:absolute; height:1px; background:linear-gradient(90deg, transparent, rgba(97,168,255,.65), transparent); transform-origin:left center; }
+    .c1{left:43%;top:25%;width:210px;transform:rotate(27deg)}.c2{left:44%;top:25%;width:150px;transform:rotate(90deg)}.c3{left:43%;top:25%;width:220px;transform:rotate(153deg)}.c4{left:43%;top:59%;width:145px;transform:rotate(90deg)}
+    .inspector .status { color: var(--green); font-size: 12px; font-weight: 650; }
+    .decision { margin-top: 18px; border: 1px solid rgba(244,189,91,.22); background: rgba(244,189,91,.06); border-radius: 13px; padding: 14px; }
+    .decision strong { font-size: 13px; }.decision p { color: #9ea8b6; font-size: 11px; line-height: 1.55; margin: 7px 0 0; }
+    section { padding: 92px 0; }
+    .section-head { display: grid; grid-template-columns: .7fr 1.3fr; gap: 72px; align-items: end; margin-bottom: 44px; }
+    .kicker { color: var(--blue); font-size: 12px; font-weight: 720; letter-spacing: .16em; text-transform: uppercase; }
+    h2 { margin: 10px 0 0; font-size: clamp(34px, 5vw, 58px); line-height: 1.08; letter-spacing: -.045em; }
+    .section-head p { margin: 0; color: var(--muted); font-size: 18px; }
+    .problem-grid, .feature-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+    .glass-card { border: 1px solid var(--line); background: var(--panel); backdrop-filter: blur(18px); border-radius: var(--radius); padding: 28px; box-shadow: inset 0 1px rgba(255,255,255,.03); }
+    .problem-grid .glass-card { min-height: 210px; }
+    .num { font: 650 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--amber); }
+    h3 { margin: 20px 0 8px; font-size: 20px; line-height: 1.28; letter-spacing: -.02em; }
+    .glass-card p { margin: 0; color: var(--muted); font-size: 14px; }
+    .flow { display: grid; grid-template-columns: repeat(6,1fr); gap: 10px; position: relative; }
+    .step { position: relative; min-height: 150px; padding: 19px 16px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.025); }
+    .step:not(:last-child)::after { content:"→"; position:absolute; right:-10px; top:50%; z-index:2; color:#5c6878; transform:translate(50%,-50%); }
+    .step b { display:block; margin:18px 0 7px; font-size:15px }.step small { color:var(--muted); line-height:1.5; display:block }
+    .step .dot { width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:rgba(97,168,255,.12);color:#9ac8ff;font-size:12px;font-weight:700 }
+    .feature-grid { grid-template-columns: repeat(2,1fr); }
+    .feature { position:relative; overflow:hidden; min-height:250px; }
+    .feature::after { content:""; position:absolute; width:180px;height:180px;border-radius:50%;right:-100px;bottom:-110px;background:var(--accent, rgba(97,168,255,.14));filter:blur(10px) }
+    .feature .tag { display:inline-flex; padding:5px 9px;border-radius:999px;background:rgba(255,255,255,.05);font-size:11px;color:#b7c0cd;border:1px solid var(--line) }
+    .feature p { max-width: 92%; font-size:15px }
+    .feature ul { padding:0; margin:18px 0 0; list-style:none; color:#bcc5d1; font-size:13px }
+    .feature li { margin:7px 0 }.feature li::before{content:"✓";color:var(--green);margin-right:8px}
+    .split { display:grid;grid-template-columns:1fr 1fr;gap:18px }
+    .runtime-table { overflow:hidden; border:1px solid var(--line); border-radius:var(--radius); background:rgba(255,255,255,.02) }
+    .runtime-row { display:grid;grid-template-columns:1.1fr .65fr 1.4fr;gap:20px;padding:19px 22px;border-bottom:1px solid var(--line);align-items:center }
+    .runtime-row:last-child{border:0}.runtime-row.head{color:#718095;font-size:11px;text-transform:uppercase;letter-spacing:.1em;background:rgba(255,255,255,.025)}
+    .runtime-row b{font-size:14px}.runtime-row span{color:var(--muted);font-size:13px}.runtime-row .mode{color:#b7d6ff;font:650 12px ui-monospace,SFMono-Regular,Menlo,monospace}
+    .ledger { padding:34px; display:grid;grid-template-columns:1.2fr 1fr;gap:34px;align-items:center }
+    .ledger h3{font-size:30px;margin-top:8px}.ledger p{font-size:16px}
+    .metrics { display:grid;grid-template-columns:1fr 1fr;gap:10px }
+    .metric { padding:17px;border-radius:16px;background:rgba(255,255,255,.035);border:1px solid var(--line) }.metric b{display:block;font-size:22px}.metric small{color:var(--muted)}
+    .truth { border-left:3px solid var(--amber); padding:4px 0 4px 22px; max-width:900px; color:var(--soft); font-size:18px }
+    .status-grid { display:grid;grid-template-columns:1.3fr .7fr;gap:18px }.status-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}.status-item{display:flex;gap:10px;align-items:flex-start;padding:14px;border:1px solid var(--line);border-radius:14px;color:#cdd4de;font-size:13px;background:rgba(255,255,255,.02)}.status-item i{width:8px;height:8px;background:var(--green);border-radius:50%;margin-top:7px;flex:0 0 auto}.status-side h3{font-size:24px;margin-top:4px}.status-side p{font-size:14px}.status-side .road{margin-top:18px;padding-top:18px;border-top:1px solid var(--line);color:#b3bdca;font-size:13px}
+    .cta { text-align:center;padding-bottom:120px }.cta-box{padding:68px 30px;background:linear-gradient(145deg,rgba(33,55,81,.8),rgba(22,27,35,.76) 52%,rgba(21,55,48,.68));border:1px solid rgba(126,179,255,.25);border-radius:32px;box-shadow:var(--shadow)}.cta h2{max-width:800px;margin:0 auto 18px}.cta p{max-width:660px;margin:0 auto 30px;color:#b9c4d2;font-size:17px}
+    footer { border-top:1px solid var(--line);padding:28px 0 38px;color:#667285;font-size:12px }.footer-inner{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+    @media (max-width: 900px) {
+      .nav-links{display:none}.deck{grid-template-columns:150px 1fr}.inspector{display:none}.section-head{grid-template-columns:1fr;gap:20px}.problem-grid{grid-template-columns:1fr}.feature-grid,.split,.status-grid{grid-template-columns:1fr}.flow{grid-template-columns:repeat(2,1fr)}.step:not(:last-child)::after{display:none}.ledger{grid-template-columns:1fr}.runtime-row{grid-template-columns:1fr}.runtime-row.head{display:none}
+    }
+    @media (max-width: 620px) {
+      .wrap,.nav-inner{width:min(100% - 24px,var(--max))}.hero{padding-top:72px}h1{font-size:43px}.lead{font-size:17px}.hero-visual{margin-top:46px}.deck{grid-template-columns:1fr;min-height:430px}.sidebar{display:none}.node{width:132px}.node.n1{left:0}.node.n2{left:30%}.node.n3{right:0}.flow,.status-list{grid-template-columns:1fr}.metrics{grid-template-columns:1fr}.glass-card{padding:22px}section{padding:68px 0}.runtime-row{padding:16px}.cta-box{padding:48px 20px}
+    }
+  </style>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <nav class="nav" aria-label="页面导航">
+    <div class="nav-inner">
+      <a class="brand" href="#top"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="3" stroke="#75b5ff" stroke-width="1.7"/><circle cx="17" cy="7" r="3" stroke="#7de3d5" stroke-width="1.7"/><circle cx="7" cy="17" r="3" stroke="#7de3d5" stroke-width="1.7"/><circle cx="17" cy="17" r="3" stroke="#75b5ff" stroke-width="1.7"/><path d="M10 7h4M7 10v4M17 10v4M10 17h4" stroke="#62758e" stroke-width="1.3"/></svg></span>Agent Deck</a>
+      <div class="nav-links"><a href="#why">为什么</a><a href="#how">工作方式</a><a href="#capabilities">核心能力</a><a href="#now">当前进展</a></div>
+    </div>
+  </nav>
+
+  <main id="top">
+    <header class="hero wrap">
+      <div class="eyebrow">Local-first intelligent workspace</div>
+      <h1><span class="gradient">让每一次 Agent 对话，<br>都走向可验证的结果。</span></h1>
+      <p class="lead">Agent Deck 是一款 macOS-first 的智能工作桌面。它把散落的 AI 对话，变成可规划、可并行、可干预、可验收、可复用、可计算价值的真实工作。</p>
+      <div class="hero-actions"><a class="button primary" href="#how">看看它如何工作</a><a class="button" href="#now">查看当前能力</a></div>
+
+      <div class="hero-visual" role="img" aria-label="Agent Deck Mission 工作台示意图">
+        <div class="window">
+          <div class="window-bar"><span class="traffic"><i></i><i></i><i></i></span><span class="window-title">Agent Deck · Mission</span></div>
+          <div class="deck">
+            <aside class="sidebar"><div class="mini-label">Real orchestration</div><div class="mini-title">Mission</div><div class="task-card active">定义交付与验收<span>Ready for review</span></div><div class="task-card">收集一手证据<span>Running</span></div><div class="task-card">验证与综合<span>Queued</span></div></aside>
+            <div class="canvas"><div class="canvas-head"><span>任务依赖图</span><span>5 real workers</span></div><div class="nodes"><i class="connector c1"></i><i class="connector c2"></i><i class="connector c3"></i><i class="connector c4"></i><div class="node main"><strong>Main Agent</strong><small>Plan approved</small></div><div class="node n1"><strong>证据研究员</strong><small>Verified · 2 artifacts</small></div><div class="node n2"><strong>实现工程师</strong><small>Running · Worktree</small></div><div class="node n3"><strong>质量审阅员</strong><small>Queued</small></div><div class="node n4"><strong>交付整合</strong><small>Waiting for evidence</small></div></div></div>
+            <aside class="inspector"><div class="mini-label">Next human decision</div><div class="mini-title">审阅执行计划</div><span class="status">● Evidence ready</span><div class="decision"><strong>为什么是现在</strong><p>确认后将释放 3 个可并行任务。计划、依赖和预算都可回溯。</p></div></aside>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section id="why">
+      <div class="wrap">
+        <div class="section-head"><div><span class="kicker">The shift</span><h2>不缺更多对话框，<br>缺的是工作系统。</h2></div><p>当 AI 可以同时推进很多任务，新的瓶颈变成了人的注意力：怎样保持上下文清晰、知道何时介入，并确认“完成”真的发生了。</p></div>
+        <div class="problem-grid">
+          <article class="glass-card"><span class="num">01 · CONTEXT</span><h3>会话越多，背景越容易碎</h3><p>窗口切换、重复说明和全量历史广播，让重要约束被噪音淹没，也让 Token 持续膨胀。</p></article>
+          <article class="glass-card"><span class="num">02 · CONTROL</span><h3>Agent 很忙，人却更焦虑</h3><p>没有依赖、回执和明确的下一步，人只能守着多个终端，猜测任务在哪里、为什么卡住。</p></article>
+          <article class="glass-card"><span class="num">03 · VALUE</span><h3>成本可见，价值却不可见</h3><p>我们知道消耗了多少 Token，却常常说不清结果是否被采用、节省了多少时间、降低了什么风险。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="wrap">
+        <div class="section-head"><div><span class="kicker">One complete loop</span><h2>从一句目标，<br>到一个可验收的交付。</h2></div><p>Agent Deck 用最轻的执行拓扑完成任务，把人放在真正需要判断的位置，把每一次完成落到证据与产物上。</p></div>
+        <div class="flow">
+          <div class="step"><span class="dot">1</span><b>写下目标</b><small>结果、完成标准、工作区与价值意图</small></div>
+          <div class="step"><span class="dot">2</span><b>自适应路由</b><small>简单任务 Direct，复杂任务 Mission</small></div>
+          <div class="step"><span class="dot">3</span><b>真实执行</b><small>真实会话、工作区与 Worktree</small></div>
+          <div class="step"><span class="dot">4</span><b>最小上下文</b><small>只共享已验证事实、依赖与证据</small></div>
+          <div class="step"><span class="dot">5</span><b>关键决策</b><small>计划、阻塞、评审和集成时介入</small></div>
+          <div class="step"><span class="dot">6</span><b>价值闭环</b><small>产物、证据、成本与采用结果</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="capabilities">
+      <div class="wrap">
+        <div class="section-head"><div><span class="kicker">Core capabilities</span><h2>不是更多 Agent，<br>而是更少失控。</h2></div><p>统一控制面管理会话、编排、上下文、注意力、证据和价值，同时保留每个 Provider 的真实执行能力。</p></div>
+        <div class="feature-grid">
+          <article class="glass-card feature" style="--accent:rgba(97,168,255,.17)"><span class="tag">Adaptive Runtime</span><h3>让编排成本必须物有所值</h3><p>边界清晰的工作保留一个连续上下文；只有存在真实并行收益的任务才进入 Planner、DAG 与多 Worker。</p><ul><li>Direct：0 Planner + 1 Worker</li><li>依赖安全的 Mission DAG</li><li>用户可显式覆盖路由</li></ul></article>
+          <article class="glass-card feature" style="--accent:rgba(85,214,210,.16)"><span class="tag">Context Kernel</span><h3>共享得紧密，但不臃肿</h3><p>按任务装配目标、约束、已验证事实、依赖产物和证据引用，不把完整聊天复制给所有 Agent。</p><ul><li>预算化上下文胶囊</li><li>结论可回溯到原始证据</li><li>面向轨迹检索持续演进</li></ul></article>
+          <article class="glass-card feature" style="--accent:rgba(169,149,255,.17)"><span class="tag">Attention OS</span><h3>注意力可以有不同范式</h3><p>同一份真实状态可以变成单一决策队列、全局控制室或一页简报，适配不同角色和工作时刻。</p><ul><li>Focus Queue / Control Room</li><li>Briefing 与显式延后</li><li>推进、交付、风险、价值四种排序</li></ul></article>
+          <article class="glass-card feature" style="--accent:rgba(107,229,143,.15)"><span class="tag">Evidence &amp; Value</span><h3>完成必须有证据，成本必须能复盘</h3><p>文件、Diff、测试、命令、来源和 HTML 交付物共同构成验收依据；Token 与价值意图进入同一张账本。</p><ul><li>真实进度，不用 Mock 冒充完成</li><li>HTML-first 交付与原始附件</li><li>Provider Token 真值与 ROI 基础</li></ul></article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap split">
+        <div><span class="kicker">Adaptive by default</span><h2>选择足够好、<br>也足够轻的路径。</h2><p style="color:var(--muted);font-size:17px;max-width:500px">多 Agent 不是默认答案。系统先判断协调是否真的能换来质量、速度或交付完整度。</p></div>
+        <div class="runtime-table">
+          <div class="runtime-row head"><span>工作</span><span>路径</span><span>目标</span></div>
+          <div class="runtime-row"><b>边界清晰的修改</b><span class="mode">DIRECT</span><span>一个连续上下文，减少交接</span></div>
+          <div class="runtime-row"><b>多个独立交付项</b><span class="mode">COORDINATED</span><span>依赖图控制并行和验收</span></div>
+          <div class="runtime-row"><b>调研、架构、审计</b><span class="mode">ORCHESTRATED</span><span>多源并行与综合评审</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="glass-card ledger">
+          <div><span class="kicker">Value ledger</span><h3>让 Token 消耗，连接到真实价值。</h3><p>记录价值意图、Planner 与 Worker 成本、交付证据和采用结果。最终要回答的不是“AI 说了多少”，而是“这次工作值不值得”。</p></div>
+          <div class="metrics"><div class="metric"><b>Token</b><small>实测 / 估算可区分</small></div><div class="metric"><b>Time</b><small>机器时间与人类触点</small></div><div class="metric"><b>Evidence</b><small>产物、测试、来源</small></div><div class="metric"><b>Outcome</b><small>采用、节省与风险</small></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="now">
+      <div class="wrap">
+        <div class="section-head"><div><span class="kicker">Built, not imagined</span><h2>现在已经跑通的，<br>是真实工作链路。</h2></div><p>当前以 Codex-first 为主，核心状态保存在本地 SQLite。Provider 扩展、Token 治理与更大规模评测仍在继续建设。</p></div>
+        <div class="status-grid">
+          <div class="glass-card"><div class="status-list">
+            <div class="status-item"><i></i><span>macOS 桌面端与本地工作区</span></div><div class="status-item"><i></i><span>多条真实 Codex 会话</span></div>
+            <div class="status-item"><i></i><span>Direct / Mission 自适应路径</span></div><div class="status-item"><i></i><span>任务 DAG、Worker 与人工审批</span></div>
+            <div class="status-item"><i></i><span>Git Worktree、Diff、测试与命令</span></div><div class="status-item"><i></i><span>消息回执、运行历史和人工干预</span></div>
+            <div class="status-item"><i></i><span>Focus、Control Room 与 Briefing</span></div><div class="status-item"><i></i><span>HTML 交付、附件、预览与导出</span></div>
+            <div class="status-item"><i></i><span>预算化 Context Kernel</span></div><div class="status-item"><i></i><span>Token 真值与可复现对照评测</span></div>
+          </div></div>
+          <aside class="glass-card status-side"><span class="tag">透明的边界</span><h3>不把路线图写成现状。</h3><p>Claude Code、Trae 与通用 API Provider 的完整 Mission 体验还在建设。结果价值确认、Token Budget Governor 与轨迹级检索也仍是下一阶段重点。</p><div class="road">先把核心闭环做深，再扩展 Provider 和终端形态。</div></aside>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head"><div><span class="kicker">Engineering truth</span><h2>我们如何看待<br>速度与质量。</h2></div><p>Agent Deck 不回避多 Agent 的成本，也不以 Agent 数量替代有效产出。</p></div>
+        <p class="truth">首轮三个同题、同模型、同推理档位的简单任务配对实验中，双方均通过全部隐藏检查，Agent Deck Direct 与直接 Codex 的平均耗时接近持平。重复实验存在明显方差，因此这是早期工程证据，不是稳定领先结论。我们的标准是：简单任务不因编排显著退化，复杂任务必须在质量、注意力成本或交付完整度上给出可验证收益。</p>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="wrap"><div class="cta-box"><span class="kicker">Build with us</span><h2>让 AI 不只是回答问题，<br>而是真正完成工作。</h2><p>如果你正在用 Agent 做复杂研发、深度调研、故障排查或交付管理，欢迎带一个真实任务来成为 Agent Deck 的早期共创者。</p><a class="button primary" href="mailto:?subject=Agent%20Deck%20%E6%97%A9%E6%9C%9F%E5%85%B1%E5%88%9B">联系共创</a></div></div>
+    </section>
+  </main>
+
+  <footer><div class="wrap footer-inner"><span>Agent Deck · Local-first intelligent workspace</span><span>外宣产品介绍 · 2026.09</span></div></footer>
+</body>
+</html>
