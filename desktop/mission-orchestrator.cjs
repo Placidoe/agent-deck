@@ -41,6 +41,10 @@ function providerEventKey(event, threadId) {
   const itemId = event.params?.item?.id;
   const turnId = event.params?.turn?.id || event.params?.turnId;
   const requestId = event.id;
+  if (method === "thread/tokenUsage/updated") {
+    const total = event.params?.tokenUsage?.last?.totalTokens ?? event.params?.tokenUsage?.total?.totalTokens ?? "unknown";
+    return `${method}:${threadId}:${turnId || "turn"}:${total}`;
+  }
   const identity = itemId || requestId || turnId;
   return identity == null ? null : `${method}:${threadId}:${identity}`;
 }
@@ -629,7 +633,7 @@ class MissionOrchestrator extends EventEmitter {
   }
 
   async handleCodexEvent(event) {
-    const trackedMethods = new Set(["turn/started", "turn/completed", "turn/plan/updated", "item/started", "item/completed", "item/execution/started", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/gitOperation/requestApproval", "item/approval/resolved", "item/tool/call"]);
+    const trackedMethods = new Set(["turn/started", "turn/completed", "turn/plan/updated", "thread/tokenUsage/updated", "item/started", "item/completed", "item/execution/started", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/gitOperation/requestApproval", "item/approval/resolved", "item/tool/call"]);
     if (!trackedMethods.has(event.method)) return;
     const threadId = event.params?.threadId || event.params?.thread?.id;
     if (event.method === "item/tool/call" && event.id != null) {
@@ -702,7 +706,7 @@ class MissionOrchestrator extends EventEmitter {
         this.store.updateMission(mission.id, { activeTurnId: null });
       }
     }
-    if (["turn/started", "turn/completed", "turn/plan/updated", "item/started", "item/completed", "item/execution/started", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/gitOperation/requestApproval", "item/approval/resolved"].includes(event.method)) {
+    if (["turn/started", "turn/completed", "turn/plan/updated", "thread/tokenUsage/updated", "item/started", "item/completed", "item/execution/started", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/gitOperation/requestApproval", "item/approval/resolved"].includes(event.method)) {
       const providerPayload = event.id == null ? event.params : { requestId: event.id, ...event.params };
       this.store.appendEvent(mission.id, `provider.${event.method}`, compactLedgerValue(providerPayload), meta);
     }

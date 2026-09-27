@@ -326,6 +326,19 @@ test("Value Ledger persists a value contract, local token-cost estimate, and use
   assert.equal(ledger.valueEvents.length, 1);
 }));
 
+test("Value Ledger uses the latest provider token update once per turn", () => withTempDir((directory) => {
+  const store = new MissionStore(path.join(directory, "provider-token-ledger.sqlite3"));
+  const mission = store.createMission({ title: "Measured", outcome: "Use provider truth", cwd: directory, valueContract: { tokenBudget: 50000 } });
+  store.appendEvent(mission.id, "provider.thread/tokenUsage/updated", { threadId: "worker-1", turnId: "turn-1", tokenUsage: { last: { totalTokens: 100, inputTokens: 80, cachedInputTokens: 20, outputTokens: 20, reasoningOutputTokens: 5 } } }, { threadId: "worker-1" });
+  store.appendEvent(mission.id, "provider.thread/tokenUsage/updated", { threadId: "worker-1", turnId: "turn-1", tokenUsage: { last: { totalTokens: 140, inputTokens: 100, cachedInputTokens: 30, outputTokens: 40, reasoningOutputTokens: 10 } } }, { threadId: "worker-1" });
+  store.appendEvent(mission.id, "provider.thread/tokenUsage/updated", { threadId: "worker-1", turnId: "turn-2", tokenUsage: { last: { totalTokens: 60, inputTokens: 50, cachedInputTokens: 40, outputTokens: 10, reasoningOutputTokens: 2 } } }, { threadId: "worker-1" });
+  const ledger = store.valueLedger(mission.id);
+  assert.equal(ledger.costs.tokenSource, "provider_reported");
+  assert.equal(ledger.costs.observedTokens, 200);
+  assert.deepEqual(ledger.costs.providerUsage, { totalTokens: 200, inputTokens: 150, cachedInputTokens: 70, outputTokens: 50, reasoningOutputTokens: 12 });
+  assert.equal(ledger.costs.tokenBudgetRemaining, 49800);
+}));
+
 test("requirement inbox persists a canonical requirement and follows linked Mission state", () => withTempDir((directory) => {
   const store = new MissionStore(path.join(directory, "requirements.sqlite3"));
   const requirement = store.createRequirement({ title: "Improve planner", outcome: "A verified planner experience", body: "Add a real inbox and approval flow.", workspacePath: directory, priority: "high", status: "ready_to_plan", labels: ["product", "agent"], acceptanceCriteria: ["A requirement can create a Mission"], valueContract: { scenario: "研发交付", expectedValueCny: 1200, baselineHours: 4, tokenBudget: 16000 } });

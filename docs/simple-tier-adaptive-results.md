@@ -35,5 +35,9 @@ S3 新版阶段分解：控制面 2.119 秒、Worker 63.105 秒、自动集成 3
 
 1. 建立 benchmark 汇总器，自动读取 JSON 结果并输出 HTML/JSON 报告。
 2. 每个简单 case 再补至少 2 次同档配对，启用 `T_green <= 1.10x` 与质量不降的门禁。
-3. 从 app-server 的 Token usage 事件采集真实输入、缓存输入、输出和总 Token，替代本地估算。
+3. 聚合实际工具批次，并用后续配对样本比较双方真实 Provider Token。
 4. 开始 M1–M3 中等任务夹具，验证多 Agent 是否能用质量、关键路径或返工率抵消协调成本。
+
+## Token 真值进展
+
+2026-09-27 的真实 S1 复跑已验证 `thread/tokenUsage/updated` 能进入 Mission Value Ledger：`tokenSource=provider_reported`，本轮总 Token 为 30,847。账本按 turn 取最后累计值，避免把同一 turn 的多次增量事件重复相加，并分别记录 input、cached input、output 与 reasoning output。该样本也超过了 20,000 的计划预算，说明下一阶段必须实现运行中的 Token Budget Governor，而不能只展示预算。

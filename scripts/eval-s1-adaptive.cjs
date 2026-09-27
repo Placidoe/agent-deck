@@ -191,6 +191,7 @@ async function main() {
       workerCount: completed.tasks.filter((item) => item.agentThreadId).length,
       plannerTurns: completed.events.filter((event) => event.type === "planner.turn.started").length,
       providerTokens: ledger.costs.tokenSource === "provider_reported" ? ledger.costs.billedTokens : null,
+      providerUsage: ledger.costs.tokenSource === "provider_reported" ? ledger.costs.providerUsage : null,
       estimatedTokens: ledger.costs.tokenSource === "local_estimate" ? ledger.costs.estimatedTokens : null,
       tokenSource: ledger.costs.tokenSource,
       recordedEvents: completed.events.length,

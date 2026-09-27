@@ -114,7 +114,8 @@ async function main() {
   const committedDiff = run("/usr/bin/git", ["diff", `${seedCommit}..HEAD`, "--", "."]);
   const worktreeDiff = run("/usr/bin/git", ["diff", "HEAD", "--", "."]);
   const diff = [committedDiff.stdout, worktreeDiff.stdout].filter(Boolean).join("\n");
-  const usage = completedTurn?.usage || completedTurn?.tokenUsage || null;
+  const usageEvent = [...events].reverse().find((event) => event.method === "thread/tokenUsage/updated");
+  const usage = usageEvent?.params?.tokenUsage?.last || completedTurn?.usage || completedTurn?.tokenUsage || null;
   const result = {
     schemaVersion: "agent-deck-eval/v1",
     caseId,
@@ -133,6 +134,13 @@ async function main() {
       hiddenChecksPassed: hiddenPassed, hiddenChecksTotal: hiddenTotal,
       humanTouches: approvalCount, workerCount: 1,
       providerTokens: usage?.total_tokens || usage?.totalTokens || null,
+      providerUsage: usage ? {
+        totalTokens: usage.total_tokens || usage.totalTokens || 0,
+        inputTokens: usage.input_tokens || usage.inputTokens || usage.prompt_tokens || usage.promptTokens || 0,
+        cachedInputTokens: usage.cached_input_tokens || usage.cachedInputTokens || 0,
+        outputTokens: usage.output_tokens || usage.outputTokens || usage.completion_tokens || usage.completionTokens || 0,
+        reasoningOutputTokens: usage.reasoning_output_tokens || usage.reasoningOutputTokens || 0,
+      } : null,
       toolEvents: events.filter((event) => ["item/started", "item/completed"].includes(event.method) && ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall"].includes(event.params?.item?.type)).length,
       graderSec: Number(((publicChecks.durationMs + hiddenChecks.durationMs) / 1000).toFixed(3)),
     },

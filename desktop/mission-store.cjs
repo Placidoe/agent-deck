@@ -377,10 +377,41 @@ class MissionStore {
     const outputTokens = mission.tasks.reduce((sum, task) => sum + estimateTokens(JSON.stringify(task.result || "")), 0);
     const coordinationTokens = mission.messages.reduce((sum, message) => sum + estimateTokens(message.text), 0);
     const estimatedTokens = plannerTokens + workerPromptTokens + (workerPromptTokens ? 0 : contextTokens) + outputTokens + coordinationTokens;
-    const observedTokens = mission.events.filter((event) => event.type === "provider.turn/completed").reduce((sum, event) => {
+    const usageByTurn = new Map();
+    for (const event of mission.events.filter((item) => item.type === "provider.thread/tokenUsage/updated")) {
+      const usage = event.payload?.tokenUsage?.last || event.payload?.tokenUsage?.total || {};
+      const key = event.payload?.turnId || `${event.threadId || "thread"}:${event.id}`;
+      const normalized = {
+        totalTokens: Number(usage.totalTokens || usage.total_tokens || 0),
+        inputTokens: Number(usage.inputTokens || usage.input_tokens || usage.promptTokens || usage.prompt_tokens || 0),
+        cachedInputTokens: Number(usage.cachedInputTokens || usage.cached_input_tokens || 0),
+        outputTokens: Number(usage.outputTokens || usage.output_tokens || usage.completionTokens || usage.completion_tokens || 0),
+        reasoningOutputTokens: Number(usage.reasoningOutputTokens || usage.reasoning_output_tokens || 0),
+      };
+      if (!usageByTurn.has(key) || normalized.totalTokens >= usageByTurn.get(key).totalTokens) usageByTurn.set(key, normalized);
+    }
+    for (const event of mission.events.filter((item) => item.type === "provider.turn/completed")) {
       const usage = event.payload?.turn?.usage || event.payload?.usage || {};
-      return sum + Number(usage.total_tokens || usage.totalTokens || (Number(usage.prompt_tokens || usage.promptTokens || 0) + Number(usage.completion_tokens || usage.completionTokens || 0)) || 0);
-    }, 0);
+      const key = event.payload?.turn?.id || event.payload?.turnId || `${event.threadId || "thread"}:${event.id}`;
+      if (usageByTurn.has(key)) continue;
+      const inputTokens = Number(usage.input_tokens || usage.inputTokens || usage.prompt_tokens || usage.promptTokens || 0);
+      const outputTokens = Number(usage.output_tokens || usage.outputTokens || usage.completion_tokens || usage.completionTokens || 0);
+      usageByTurn.set(key, {
+        totalTokens: Number(usage.total_tokens || usage.totalTokens || inputTokens + outputTokens || 0),
+        inputTokens,
+        cachedInputTokens: Number(usage.cached_input_tokens || usage.cachedInputTokens || 0),
+        outputTokens,
+        reasoningOutputTokens: Number(usage.reasoning_output_tokens || usage.reasoningOutputTokens || 0),
+      });
+    }
+    const providerUsage = [...usageByTurn.values()].reduce((sum, usage) => ({
+      totalTokens: sum.totalTokens + usage.totalTokens,
+      inputTokens: sum.inputTokens + usage.inputTokens,
+      cachedInputTokens: sum.cachedInputTokens + usage.cachedInputTokens,
+      outputTokens: sum.outputTokens + usage.outputTokens,
+      reasoningOutputTokens: sum.reasoningOutputTokens + usage.reasoningOutputTokens,
+    }), { totalTokens: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 });
+    const observedTokens = providerUsage.totalTokens;
     const billedTokens = observedTokens > 0 ? observedTokens : estimatedTokens;
     const estimatedModelCostCny = Number((billedTokens / 1000 * contract.tokenCostPer1kCny).toFixed(4));
     const plannedValueCny = contract.expectedValueCny || Number((contract.baselineHours * contract.humanHourlyRateCny).toFixed(2));
@@ -392,7 +423,7 @@ class MissionStore {
     const verifiedArtifacts = mission.artifacts.filter((artifact) => artifact.verificationStatus === "user_verified").length;
     return {
       missionId, contract, valueEvents,
-      costs: { estimatedTokens, observedTokens, billedTokens, tokenSource: observedTokens > 0 ? "provider_reported" : "local_estimate", plannerTokens, workerPromptTokens, contextTokens, outputTokens, coordinationTokens, estimatedModelCostCny, manualCostCny, totalCostCny, tokenBudgetRemaining: Math.max(0, contract.tokenBudget - billedTokens) },
+      costs: { estimatedTokens, observedTokens, billedTokens, tokenSource: observedTokens > 0 ? "provider_reported" : "local_estimate", providerUsage, plannerTokens, workerPromptTokens, contextTokens, outputTokens, coordinationTokens, estimatedModelCostCny, manualCostCny, totalCostCny, tokenBudgetRemaining: Math.max(0, contract.tokenBudget - billedTokens) },
       value: { plannedValueCny, confirmedValueCny, projectedRoi, realizedRoi, verifiedArtifacts, completedTasks: mission.tasks.filter((task) => task.status === "completed").length, totalTasks: mission.tasks.length },
       disclaimer: observedTokens > 0 ? "Token usage is reported by the active provider where available; cost still uses your locally configured rate. Confirmed value is recorded only from your evidence entries." : "Token and model cost are local estimates using your configured rate. Confirmed value is recorded only from your evidence entries.",
     };

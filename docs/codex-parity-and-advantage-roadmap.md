@@ -20,7 +20,7 @@
 | P0-04 | 用新版 Runtime 重跑 S1 | 已完成 | 首轮追回隐藏质量；精简 Direct 完成路径后，同档复测为 `89.7s` vs Codex `100.4s`，双方隐藏 7/7 |
 | P0-05 | 补齐 S2、S3、M1–M3、C1–C3 固定夹具与隐藏 grader | 进行中 | S1/S2/S3 已完成首轮同档配对且确定性质量均为 80/80；M1–M3、C1–C3 尚待补齐 |
 | P0-06 | Benchmark 汇总器和回归门禁 | 已完成 | `npm run eval:report` 生成自包含 HTML/JSON；简单任务超过 1.35x 或质量下降超过 5 分时失败，超过 1.10x 时预警 |
-| P0-07 | Runtime 时间线与 Token 真值采集 | 进行中 | 已分离控制面、Worker、集成和 grader，并修正无 UI 审批造成的假超时；仍需补齐真实 Provider Token 与工具批次 |
+| P0-07 | Runtime 时间线与 Token 真值采集 | 进行中 | 已分离控制面、Worker、集成和 grader；真实 Provider input/cache/output/reasoning Token 已按 turn 去重入账。仍需聚合实际工具批次 |
 
 ## P1：简单任务达到近零编排开销
 
