@@ -35,7 +35,9 @@
     "eval:s1:control": "node scripts/eval-direct-case.cjs S1",
     "eval:s2:control": "node scripts/eval-direct-case.cjs S2",
     "eval:s3:control": "node scripts/eval-direct-case.cjs S3",
+    "eval:report": "node scripts/summarize-benchmarks.cjs",
     "test:benchmarks": "node --test tests/benchmark-fixtures.test.mjs",
+    "test:benchmark-report": "node --test tests/benchmark-report.test.mjs",
     "test:desktop": "node scripts/desktop-qa.mjs"
   },
   "main": "desktop/main.cjs",
