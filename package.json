@@ -29,7 +29,10 @@
     "test:report-quality": "node --test tests/html-report-quality.test.mjs",
     "test:mission-live": "node scripts/smoke-mission.cjs",
     "test:mission-e2e": "node scripts/smoke-mission-e2e.cjs",
-    "eval:s1:adaptive": "node scripts/eval-s1-adaptive.cjs",
+    "eval:s1:adaptive": "node scripts/eval-s1-adaptive.cjs S1",
+    "eval:s2:adaptive": "node scripts/eval-s1-adaptive.cjs S2",
+    "eval:s3:adaptive": "node scripts/eval-s1-adaptive.cjs S3",
+    "test:benchmarks": "node --test tests/benchmark-fixtures.test.mjs",
     "test:desktop": "node scripts/desktop-qa.mjs"
   },
   "main": "desktop/main.cjs",

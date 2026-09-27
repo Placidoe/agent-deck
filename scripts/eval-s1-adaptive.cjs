@@ -8,17 +8,21 @@ const { CodexAppServer } = require("../desktop/codex-app-server.cjs");
 const { MissionOrchestrator } = require("../desktop/mission-orchestrator.cjs");
 const { MissionStore } = require("../desktop/mission-store.cjs");
 const { WorktreeManager } = require("../desktop/worktree-manager.cjs");
+const { cases } = require("../benchmarks/simple-cases.cjs");
 
 const projectRoot = path.resolve(__dirname, "..");
 const evalRoot = path.resolve(projectRoot, "../evals");
-const seedRepository = path.join(evalRoot, "s1-seed");
-const hiddenGrader = path.join(evalRoot, "graders", "s1-hidden.test.mjs");
+const caseId = String(process.argv[2] || "S1").toUpperCase();
+const benchmarkCase = cases[caseId];
+if (!benchmarkCase) throw new Error(`Unknown benchmark case ${caseId}. Choose one of: ${Object.keys(cases).join(", ")}`);
+const seedDirectory = benchmarkCase.seedDirectory;
+const hiddenGrader = benchmarkCase.hiddenGrader;
 const resultDirectory = path.join(evalRoot, "results");
-const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agent-deck-s1-adaptive-"));
+const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), `agent-deck-${caseId.toLowerCase()}-adaptive-`));
 const repository = path.join(scratchRoot, "repo");
 const client = new CodexAppServer();
 
-const taskBrief = "Fix parseRetryAfter(value, nowMs) so it supports integer seconds and HTTP-date values, clamps past dates to zero, and returns null for malformed or negative values. Preserve the public API and add focused tests.";
+const taskBrief = benchmarkCase.taskBrief;
 
 function run(command, args, options = {}) {
   const startedAt = performance.now();
@@ -83,9 +87,12 @@ function durationSeconds(from, to) {
 }
 
 async function main() {
-  assert.ok(fs.existsSync(path.join(seedRepository, ".git")), `Missing S1 seed repository: ${seedRepository}`);
-  assert.ok(fs.existsSync(hiddenGrader), `Missing S1 hidden grader: ${hiddenGrader}`);
-  execFileSync("/usr/bin/git", ["clone", "--quiet", "--no-hardlinks", seedRepository, repository]);
+  assert.ok(fs.existsSync(path.join(seedDirectory, "package.json")), `Missing ${caseId} seed directory: ${seedDirectory}`);
+  assert.ok(fs.existsSync(hiddenGrader), `Missing ${caseId} hidden grader: ${hiddenGrader}`);
+  fs.cpSync(seedDirectory, repository, { recursive: true });
+  execFileSync("/usr/bin/git", ["init", "--quiet"], { cwd: repository });
+  execFileSync("/usr/bin/git", ["add", "."], { cwd: repository });
+  execFileSync("/usr/bin/git", ["-c", "user.name=Agent Deck Eval", "-c", "user.email=eval@agent-deck.local", "commit", "--quiet", "-m", `${caseId} seed`], { cwd: repository });
   const seedCommit = execFileSync("/usr/bin/git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim();
 
   const store = new MissionStore(path.join(scratchRoot, "agent-deck.sqlite3"));
@@ -100,7 +107,7 @@ async function main() {
   const startedAt = new Date();
   const clockStart = performance.now();
   const mission = await orchestrator.create({
-    title: "S1 Retry-After parser benchmark",
+    title: `${caseId} ${benchmarkCase.title} benchmark`,
     outcome: taskBrief,
     sourcePrompt: taskBrief,
     cwd: repository,
@@ -114,7 +121,7 @@ async function main() {
     },
   });
 
-  assert.equal(mission.spec?.runtime?.mode, "direct", "S1 must route to Direct mode");
+  assert.equal(mission.spec?.runtime?.mode, "direct", `${caseId} must route to Direct mode`);
   assert.equal(mission.mainThreadId, null, "Direct mode must skip the Planner thread");
   assert.equal(mission.tasks.length, 1, "Direct mode must create one Worker");
 
@@ -124,7 +131,7 @@ async function main() {
   );
   const claimMs = Math.round(performance.now() - clockStart);
   if (eventErrors.length) throw new Error(eventErrors.map((error) => error.message).join("; "));
-  assert.equal(terminal.status, "review", terminal.error || terminal.tasks[0]?.error || "S1 did not reach review");
+  assert.equal(terminal.status, "review", terminal.error || terminal.tasks[0]?.error || `${caseId} did not reach review`);
 
   const task = terminal.tasks[0];
   await orchestrator.acceptTask(mission.id, task.id);
@@ -150,7 +157,7 @@ async function main() {
   const missionCompletedAt = eventTime(completed.events, "mission.completed");
   const result = {
     schemaVersion: "agent-deck-eval/v1",
-    caseId: "S1",
+    caseId,
     group: "agent_deck_adaptive",
     model: completed.model || null,
     reasoningEffort: "high",
@@ -194,7 +201,7 @@ async function main() {
   };
 
   fs.mkdirSync(resultDirectory, { recursive: true });
-  const outputPath = process.env.AGENT_DECK_EVAL_OUTPUT || path.join(resultDirectory, `s1-adaptive-${safeTimestamp()}.json`);
+  const outputPath = process.env.AGENT_DECK_EVAL_OUTPUT || path.join(resultDirectory, `${caseId.toLowerCase()}-adaptive-${safeTimestamp()}.json`);
   fs.writeFileSync(outputPath, `${JSON.stringify(result, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify({ ...result, checks: undefined, outputPath }, null, 2)}\n`);
   if (result.status !== "passed") process.exitCode = 1;

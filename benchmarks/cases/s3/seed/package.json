@@ -1,0 +1,8 @@
+{
+  "name": "task-summary-cli-eval",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "task-summary": "bin/task-summary.js" },
+  "scripts": { "test": "node --test" }
+}
