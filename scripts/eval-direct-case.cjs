@@ -11,8 +11,12 @@ const projectRoot = path.resolve(__dirname, "..");
 const evalRoot = path.resolve(projectRoot, "../evals");
 const resultDirectory = path.join(evalRoot, "results");
 const caseId = String(process.argv[2] || "S1").toUpperCase();
+const reasoningEffort = String(process.env.CODEX_EVAL_EFFORT || "medium").toLowerCase();
+const timeoutMs = Number(process.env.CODEX_EVAL_TIMEOUT_MS || 600000);
 const benchmarkCase = cases[caseId];
 if (!benchmarkCase) throw new Error(`Unknown benchmark case ${caseId}. Choose one of: ${Object.keys(cases).join(", ")}`);
+if (!["low", "medium", "high", "xhigh"].includes(reasoningEffort)) throw new Error(`Unsupported CODEX_EVAL_EFFORT: ${reasoningEffort}`);
+if (!Number.isFinite(timeoutMs) || timeoutMs < 1000) throw new Error(`Invalid CODEX_EVAL_TIMEOUT_MS: ${process.env.CODEX_EVAL_TIMEOUT_MS}`);
 
 const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), `codex-${caseId.toLowerCase()}-control-`));
 const repository = path.join(scratchRoot, "repo");
@@ -63,7 +67,7 @@ async function main() {
     timer = setTimeout(async () => {
       if (activeTurnId) await client.interrupt({ threadId, turnId: activeTurnId }).catch(() => {});
       reject(new Error(`${caseId} direct Codex control timed out`));
-    }, 600000);
+    }, timeoutMs);
     client.on("event", (event) => {
       if (event.params?.threadId !== threadId) return;
       events.push(event);
@@ -78,7 +82,7 @@ async function main() {
     });
   });
 
-  const turn = await client.sendTurn({ threadId, cwd: repository, prompt: benchmarkCase.taskBrief, model: "gpt-5.6-terra", effort: "high" });
+  const turn = await client.sendTurn({ threadId, cwd: repository, prompt: benchmarkCase.taskBrief, model: "gpt-5.6-terra", effort: reasoningEffort });
   activeTurnId = turn.id;
   let completedTurn;
   let turnError = null;
@@ -106,7 +110,7 @@ async function main() {
     caseId,
     group: "direct_codex",
     model: created.model || "gpt-5.6-terra",
-    reasoningEffort: "high",
+    reasoningEffort,
     startedAt: startedAt.toISOString(),
     seedCommit,
     threadId,
@@ -125,7 +129,15 @@ async function main() {
     status: !turnError && publicChecks.status === 0 && hiddenChecks.status === 0 ? "passed" : turnError ? "runtime_failed" : "failed",
     runtimeError: turnError?.message || null,
     checks: { public: publicChecks, hidden: hiddenChecks },
-    evidence: { finalText: finalText.slice(0, 12000), diff },
+    evidence: {
+      finalText: finalText.slice(0, 12000),
+      diff,
+      eventSummary: events.map((event) => ({
+        method: event.method,
+        itemType: event.params?.item?.type || null,
+        itemStatus: event.params?.item?.status || null,
+      })),
+    },
   };
   fs.mkdirSync(resultDirectory, { recursive: true });
   const outputPath = process.env.AGENT_DECK_EVAL_OUTPUT || path.join(resultDirectory, `${caseId.toLowerCase()}-control-${safeTimestamp()}.json`);
