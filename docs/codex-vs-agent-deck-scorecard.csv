@@ -3,9 +3,11 @@ S1,simple,direct_codex,1,gpt-5.6-terra,high,2026-09-26T20:20:29Z,,,69.19,69.3,10
 S1,simple,agent_deck,2,gpt-5.6-terra,product_routed,2026-09-26T20:25:00Z,,90.6,1315.6,,83,6,7,public_pass_hidden_fail,9,,1,,,35,4,failed_hidden,"Mission reported Completed and public 5/5, but hidden rejected decimal/partially numeric input; over-decomposed into 4 workers and required dependency repair."
 S1,simple,agent_deck_adaptive,3,gpt-5.6-terra,high,2026-09-27T06:06:04Z,,,184.925,188.262,,7,7,pass,1,,0,,1032,,1,passed,"Deterministic score 80/80; full manual quality score pending. Public 8/8 and hidden 7/7. Zero Planner turns, one Worker, one acceptance and automatic integration. Token count is a local estimate and is not comparable to the provider-reported control value."
 S2,simple,agent_deck,1,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,
+S2,simple,agent_deck_adaptive,3,gpt-5.6-terra,high,2026-09-27T07:45:03Z,,,102.474,105.979,,6,6,pass,1,,0,,1069,,1,passed,"Deterministic score 80/80; public 5/5 and hidden 6/6. Zero Planner turns and one Worker. Token count is a local estimate."
 S2,simple,direct_codex,2,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,
 S3,simple,direct_codex,1,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,
 S3,simple,agent_deck,2,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,
+S3,simple,agent_deck_adaptive,3,gpt-5.6-terra,medium,2026-09-27T08:01:32Z,,,144.942,149.149,,5,5,pass,1,,0,,1248,,1,passed,"Deterministic score 80/80; public 8/8 and hidden 5/5. Control plane 1.855s, Worker turn 142.875s, integration 3.347s, grader 0.796s. A prior high-effort run exceeded 10 minutes and was interrupted."
 M1,medium,agent_deck,1,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,
 M1,medium,direct_codex,2,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,
 M2,medium,direct_codex,1,gpt-5.6-terra,,,,,,,,,,,,,,,,,,pending,

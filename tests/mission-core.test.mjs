@@ -61,8 +61,8 @@ test("performance routing lowers routine evidence work without downgrading synth
   assert.equal(taskNeedsHtml(evidence), false);
   assert.equal(workerPerformanceRoute(report).effort, "medium");
   assert.equal(taskNeedsHtml(report), true);
-  assert.equal(workerPerformanceRoute(evidence, { direct: true }).effort, "high");
-  assert.equal(workerPerformanceRoute(evidence, { direct: true }).id, "direct-quality");
+  assert.equal(workerPerformanceRoute(evidence, { direct: true }).effort, "medium");
+  assert.equal(workerPerformanceRoute(evidence, { direct: true }).id, "direct-balanced");
 });
 
 test("adaptive routing skips orchestration for coherent code work and escalates complex research", () => {
@@ -751,7 +751,7 @@ test("adaptive direct mode skips the planner and auto-integrates after one human
   assert.equal(created.model, "test-model");
   assert.equal(calls.filter(call => call.kind === "thread").length, 1);
   assert.equal(calls.filter(call => call.kind === "turn").length, 1);
-  assert.equal(calls.find(call => call.kind === "turn").input.effort, "high");
+  assert.equal(calls.find(call => call.kind === "turn").input.effort, "medium");
   assert.match(calls.find(call => call.kind === "turn").input.prompt, /Complete this repository task directly/);
   assert.match(calls.find(call => call.kind === "turn").input.prompt, /invalid-input|boundary/i);
   assert.match(calls.find(call => call.kind === "turn").input.prompt, /behavior matrix/);

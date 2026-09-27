@@ -25,10 +25,10 @@ function workerPerformanceRoute(task = {}, options = {}) {
   const reportTask = taskNeedsHtml(task);
   if (options.direct) {
     return {
-      id: "direct-quality",
-      effort: "high",
-      contextTokenBudget: 2400,
-      maxToolBatches: 12,
+      id: "direct-balanced",
+      effort: "medium",
+      contextTokenBudget: 1800,
+      maxToolBatches: 8,
       reportTask,
     };
   }

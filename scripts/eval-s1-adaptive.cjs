@@ -53,7 +53,7 @@ function waitFor(read, predicate, timeoutMs = 600000) {
           resolve(value);
         } else if (Date.now() - startedAt > timeoutMs) {
           clearInterval(timer);
-          reject(new Error(`S1 timed out in Mission status ${value?.status || "unknown"}`));
+          reject(new Error(`${caseId} timed out in Mission status ${value?.status || "unknown"}`));
         }
       } catch (error) {
         clearInterval(timer);
@@ -135,7 +135,7 @@ async function main() {
 
   const task = terminal.tasks[0];
   await orchestrator.acceptTask(mission.id, task.id);
-  const completed = store.getMission(mission.id);
+  const completed = store.getMission(mission.id, { eventLimit: 500, messageLimit: 100, artifactLimit: 100 });
   const gradePath = completed.integrationPath || task.worktreePath;
   const publicChecks = run(process.execPath, ["--test"], { cwd: gradePath });
   const hiddenChecks = run(process.execPath, ["--test", hiddenGrader], {
@@ -155,12 +155,13 @@ async function main() {
     || eventTime(completed.events, "worker.turn.started", (event) => event.taskId === task.id);
   const workerCompletedAt = eventTime(completed.events, "provider.turn/completed", (event) => event.taskId === task.id);
   const missionCompletedAt = eventTime(completed.events, "mission.completed");
+  const workerRouteEvent = completed.events.find((event) => event.type === "worker.turn.started" && event.taskId === task.id);
   const result = {
     schemaVersion: "agent-deck-eval/v1",
     caseId,
     group: "agent_deck_adaptive",
     model: completed.model || null,
-    reasoningEffort: "high",
+    reasoningEffort: workerRouteEvent?.payload?.reasoningEffort || null,
     startedAt: startedAt.toISOString(),
     seedCommit,
     missionId: mission.id,
@@ -182,6 +183,7 @@ async function main() {
       providerTokens: ledger.costs.tokenSource === "provider_reported" ? ledger.costs.billedTokens : null,
       estimatedTokens: ledger.costs.tokenSource === "local_estimate" ? ledger.costs.estimatedTokens : null,
       tokenSource: ledger.costs.tokenSource,
+      recordedEvents: completed.events.length,
       phases: {
         controlPlaneSec: durationSeconds(missionCreatedAt, workerStartedAt),
         workerTurnSec: durationSeconds(workerStartedAt, workerCompletedAt),

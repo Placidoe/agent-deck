@@ -18,7 +18,7 @@ The creation dialog defaults to `Adaptive`. Users can explicitly force `Direct` 
 
 ## Direct quality contract
 
-Direct mode is not a low-quality shortcut. Its single Worker uses the high reasoning route and owns inspection, implementation, focused tests, and final diff review in one context. The prompt requires at least one request-derived boundary, invalid-input, or regression probe beyond visible happy-path tests. Reports are not generated unless requested.
+Direct mode is not a low-quality shortcut. Its single Worker uses a balanced reasoning route and owns inspection, implementation, focused tests, and final diff review in one context. A compact behavior matrix covers valid, boundary, near-miss, type, normalization, and compatibility partitions without adding another model turn. Reports are not generated unless requested.
 
 After the Worker returns structured evidence, one human acceptance commits the worktree and automatically creates the integration branch. There is no empty Planner node and no second integration confirmation.
 
@@ -40,7 +40,7 @@ The Value Ledger now separates Planner prompt tokens and Worker prompt tokens. D
 1. Create a Mission such as “Fix the date parser and add boundary tests” with `Adaptive` selected.
 2. The canvas should show one `Delivery Agent`, not a Main Agent plus a DAG.
 3. Activity should include `mission.route.selected` and `mission.direct.started`, with no `planner.turn.started`.
-4. The Worker turn should show performance route `direct-quality` and reasoning effort `high`.
+4. The Worker turn should show performance route `direct-balanced` and reasoning effort `medium`.
 5. After result review, one acceptance should move the Mission directly to `Completed` and record `mission.direct.auto_integrating`.
 6. In Value & Cost, Planner tokens should be `0`; Worker prompt and provider usage remain traceable.
 7. Create a research/benchmark request: it should still enter the human-reviewed Planner/DAG path.
