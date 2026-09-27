@@ -197,20 +197,11 @@ Return a concise user-facing message plus tasksToCreate. Use an empty tasksToCre
 
 function taskPrompt(mission, task, mergeState = null, contextKernel = null, route = workerPerformanceRoute(task, { mergeConflict: Boolean(mergeState?.conflict) })) {
   if (mission.spec?.runtime?.mode === "direct") {
-    return `Complete this repository task directly. Keep implementation and verification in this one context; do not delegate, create planning artifacts, or narrate routine work.
+    return `Implement and verify this repository task directly:
 
-TASK
 ${mission.sourcePrompt || mission.outcome}
 
-EXPECTED OUTCOME
-${mission.outcome}
-
-ACCEPTANCE
-${task.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}
-
-Before editing, use a compact behavior matrix to cover canonical valid inputs, boundary-valid inputs, near-miss invalid inputs, unsupported types, normalization rules, and public compatibility. For parser, validator, serializer, or CLI work, explicitly check whitespace, empty input, lexical strictness versus partial parsing, alternate numeric forms, type coercion, and exact API/signature compatibility when applicable.
-
-Inspect the existing implementation and tests, make the smallest correct patch, add focused request-derived regression tests, run the narrowest relevant suite, and inspect the final diff. Stop when the acceptance criteria have concrete evidence. Do not create an HTML report unless requested.`;
+Inspect the implementation and tests, make the smallest correct patch, add focused regression coverage for the stated behavior plus relevant boundary or invalid inputs, run the narrowest relevant suite, and inspect the final diff. Preserve unrelated behavior and public APIs. Do not delegate or create a report. Finish with a concise summary, tests run, changed files, and any blocker.`;
   }
   const shared = (mission.artifacts || []).map((artifact) => `- ${artifact.title} [${artifact.verificationStatus}]: ${artifact.summary}`).join("\n") || "No shared artifacts yet.";
   const mergeRecovery = mergeState?.conflict ? `\n\nPRE-EXECUTION DEPENDENCY MERGE RECOVERY\nThis real worktree contains an unfinished dependency merge:\n${mergeState.conflict}\n\nDependency branches that are not yet ancestors of HEAD:\n${mergeState.pendingRefs.map((item) => `- ${item}`).join("\n") || "- Inspect MERGE_HEAD and git status"}\n\nBefore the main task, inspect git status and resolve the conflict semantically. Preserve the valid contributions from every dependency; do not abort the merge, reset the worktree, or discard either side. Stage the resolution and complete the merge commit. Then merge every remaining dependency branch above one at a time, resolving and committing any further conflicts. Verify each with git merge-base --is-ancestor <branch> HEAD. Only then continue the assigned task.` : "";
@@ -444,7 +435,7 @@ class MissionOrchestrator extends EventEmitter {
             included: contextKernel.stats.included, withheld: contextKernel.stats.withheld,
           }, { taskId: candidate.id, threadId: created.thread.id });
           const prompt = executionPolicy(mission) + taskPrompt(mission, candidate, worktree, contextKernel, route);
-          const turn = await runtime.sendTurn({ threadId: created.thread.id, cwd: worktree.path, prompt, model: mission.model, effort: route.effort, outputSchema: taskResultSchema });
+          const turn = await runtime.sendTurn({ threadId: created.thread.id, cwd: worktree.path, prompt, model: mission.model, effort: route.effort, ...(direct ? {} : { outputSchema: taskResultSchema }) });
           this.store.updateTask(candidate.id, { activeTurnId: turn.id, phase: worktree.conflict ? "resolving_dependencies" : "working" });
           this.store.startRun({ missionId, taskId: candidate.id, agentId: `${missionId}:${candidate.key}`, threadId: created.thread.id, turnId: turn.id, phase: worktree.conflict ? "resolving_dependencies" : "working", triggerType: "scheduler.dispatch" });
           this.store.appendEvent(missionId, "worker.turn.started", { taskKey: candidate.key, threadId: created.thread.id, turnId: turn.id, mergeRecovery: Boolean(worktree.conflict), pendingRefs: worktree.pendingRefs || [], performanceRoute: route.id, reasoningEffort: route.effort, promptEstimatedTokens: promptTokenEstimate(prompt), contextTokenBudget: route.contextTokenBudget, maxToolBatches: route.maxToolBatches, reportContract: route.reportTask ? "html_full" : "native_compact" }, { taskId: candidate.id, threadId: created.thread.id });
@@ -743,7 +734,14 @@ class MissionOrchestrator extends EventEmitter {
         if (["review", "completed"].includes(latest?.status)) this.store.updateLatestTaskArtifact(mission.id, task.id, { summary: result.summary || task.title });
         this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "task.result", messageType: "response", text: result.summary || "Worker result submitted.", deliveryStatus: "delivered", source: "codex", providerItemId: item.id });
       } catch {
-        this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "worker.message", messageType: "response", text: item.text || "Worker sent a response.", deliveryStatus: "delivered", source: "codex", providerItemId: item.id });
+        const plainText = String(item.text || "").trim();
+        if (mission.spec?.runtime?.mode === "direct" && plainText) {
+          const result = { summary: plainText, acceptance: [], changedFiles: [], blockers: [] };
+          this.store.updateTask(task.id, { result, phase: "finishing" });
+          this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "task.result", messageType: "response", text: plainText, deliveryStatus: "delivered", source: "codex", providerItemId: item.id });
+        } else {
+          this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "worker.message", messageType: "response", text: item.text || "Worker sent a response.", deliveryStatus: "delivered", source: "codex", providerItemId: item.id });
+        }
       }
     }
     if (event.method === "turn/completed") {
