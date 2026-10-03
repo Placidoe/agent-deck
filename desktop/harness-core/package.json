@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "version": "0.1.0",
+  "source": "git+https://github.com/Placidoe/agent-deck-harness-core.git",
+  "sourceRevision": "4346cc7540e497f57edf771a3d5ad4afe662fc78",
+  "license": "MIT"
+}

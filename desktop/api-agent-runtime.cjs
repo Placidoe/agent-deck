@@ -166,8 +166,43 @@ class ApiAgentRuntime extends EventEmitter {
     this.emit("event", { method: "item/approval/resolved", params: { threadId: approval.threadId, turnId: approval.turnId, requestId, decision, state, item: { ...approval.item, state } } });
     return { requestId, decision, state, threadId: approval.threadId, turnId: approval.turnId, item: approval.item };
   }
+  pendingApproval(requestId) { return this.approvals.get(requestId); }
   async resumeThread(threadId) { if (!this.threads.has(threadId)) throw new Error("API session is not resident after restart"); }
-  async readThread(threadId) { const thread = this.threads.get(threadId); if (!thread) throw new Error("API session is not resident after restart"); return { ...thread, turns: thread.turns.map(({ abort, approvalIds, ...turn }) => ({ ...turn, approvalIds: [...approvalIds] })) }; }
+  async readThread(threadId) { const thread = this.threads.get(threadId); if (!thread) throw new Error("API session is not resident after restart"); const { profile, ...metadata } = thread; return { ...metadata, turns: thread.turns.map(({ abort, approvalIds, ...turn }) => ({ ...turn, approvalIds: [...approvalIds] })) }; }
+
+  // Shared host-controlled tools. The native SDK owns its own execution loop;
+  // reusing this broker does not invoke the legacy API conversation runtime.
+  async executeControlledTool({ thread, turn, name, args, signal }) {
+    signal?.throwIfAborted();
+    const destructive = ["workspace_write", "workspace_bash"].includes(name) || (name === "workspace_git" && MUTATING_GIT_OPERATIONS.has(args.operation));
+    const type = name === "workspace_bash" ? "commandExecution" : name === "workspace_git" ? "gitOperation" : destructive ? "fileChange" : "mcpToolCall";
+    const item = { id: `tool-${randomUUID()}`, type, tool: name, server: "agent-deck-harness", command: args.command, path: args.path, operation: args.operation, approvalRequired: destructive, state: destructive ? "requested" : "executing" };
+    this.emit("event", { method: "item/started", params: { threadId: thread.id, turnId: turn.id, item } });
+    let result;
+    try {
+      if (destructive) {
+        if (!thread.allowMutations) throw new Error("This phase is read-only");
+        this.#validateMutation(thread.cwd, name, args);
+        const abortApproval = () => { for (const requestId of [...turn.approvalIds]) this.resolveApproval({ requestId, decision: "interrupt" }).catch(() => {}); };
+        signal?.addEventListener("abort", abortApproval, { once: true });
+        let decision;
+        try { decision = await this.#requestApproval({ threadId: thread.id, turn, item, args }); }
+        finally { signal?.removeEventListener("abort", abortApproval); }
+        signal?.throwIfAborted();
+        if (decision !== "accept") throw new Error("Action declined; no mutation was executed");
+      }
+      signal?.throwIfAborted();
+      result = { text: String(await this.#tool(thread.cwd, name, args, signal)), ok: true };
+      if (/\bexit [1-9]\d*|timed out/.test(result.text) && ["workspace_git", "workspace_bash"].includes(name)) result.ok = false;
+    } catch (error) {
+      result = { text: `Tool error: ${error.message}`, ok: false };
+    }
+    const completed = { ...item, result: compact(result.text), state: result.ok ? "executed" : "failed", status: result.ok ? "completed" : "failed" };
+    turn.items.push(completed);
+    this.emit("event", { method: "item/completed", params: { threadId: thread.id, turnId: turn.id, item: completed } });
+    signal?.throwIfAborted();
+    return result;
+  }
 
   async #run(thread, turn, prompt, outputSchema) {
     const threadId = thread.id;
@@ -269,7 +304,7 @@ class ApiAgentRuntime extends EventEmitter {
     throw new Error(`Unsupported mutation tool: ${name}`);
   }
 
-  async #tool(cwd, name, args) {
+  async #tool(cwd, name, args, signal) {
     if (!cwd) throw new Error("No workspace is assigned to this API worker");
     if (name === "workspace_list") {
       const root = safeDirectory(cwd, args.path || "."); const depth = Math.max(1, Math.min(3, Number(args.depth || 1))); const entries = [];
@@ -277,7 +312,27 @@ class ApiAgentRuntime extends EventEmitter {
       visit(root, 1); return entries.slice(0, 300).join("\n");
     }
     if (name === "workspace_read") { const file = safeFile(cwd, args.path); if (!fs.statSync(file).isFile()) throw new Error("Path is not a file"); const lines = fs.readFileSync(file, "utf8").slice(0, MAX_FILE_BYTES).split("\n"); const start = Math.max(1, Number(args.startLine || 1)); const end = Math.min(lines.length, Number(args.endLine || start + 500)); return lines.slice(start - 1, end).map((line, index) => `${start + index}: ${line}`).join("\n"); }
-    if (name === "workspace_search") { const query = String(args.query || ""); const matches = []; const visit = (directory) => { for (const entry of fs.readdirSync(directory, { withFileTypes: true }).filter((entry) => ![".git", "node_modules", ".DS_Store"].includes(entry.name))) { const full = path.join(directory, entry.name); if (entry.isDirectory()) visit(full); else if (matches.length < Number(args.maxResults || 20) && fs.statSync(full).size < MAX_FILE_BYTES) { const line = fs.readFileSync(full, "utf8").split("\n").findIndex((value) => value.includes(query)); if (line >= 0) matches.push(`${path.relative(cwd, full)}:${line + 1}`); } } }; visit(cwd); return matches.join("\n") || "No matches"; }
+    if (name === "workspace_search") {
+      const query = String(args.query || "");
+      if (!query || query.length > 160) throw new Error("Search query must contain 1–160 characters");
+      const matches = []; let visited = 0;
+      const max = Math.max(1, Math.min(40, Number(args.maxResults || 20)));
+      const visit = (directory) => {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+          if (matches.length >= max || visited >= 5000) break;
+          visited += 1;
+          if ([".git", "node_modules", ".DS_Store", ".aws", ".ssh"].includes(entry.name) || entry.name.startsWith(".env") || entry.isSymbolicLink()) continue;
+          const full = path.join(directory, entry.name);
+          if (entry.isDirectory()) visit(safeDirectory(cwd, full));
+          else if (entry.isFile() && fs.statSync(full).size < MAX_FILE_BYTES) {
+            const line = fs.readFileSync(safeFile(cwd, full), "utf8").split("\n").findIndex((value) => value.includes(query));
+            if (line >= 0) matches.push(`${path.relative(cwd, full)}:${line + 1}`);
+          }
+        }
+      };
+      visit(safeDirectory(cwd, "."));
+      return (matches.join("\n") || "No matches") + (visited >= 5000 ? "\n[Search stopped at its 5000-entry budget]" : "");
+    }
     if (name === "workspace_write") {
       const content = String(args.content || "");
       if (Buffer.byteLength(content, "utf8") > MAX_WRITE_BYTES) throw new Error(`Write payload exceeds ${MAX_WRITE_BYTES} bytes`);
@@ -288,16 +343,16 @@ class ApiAgentRuntime extends EventEmitter {
     }
     if (name === "workspace_bash") {
       const command = assertSelectedWorkspaceCommand(args.command);
-      const result = await this.commandRunner({ command, cwd: fs.realpathSync(cwd), timeoutMs: Math.min(120000, Math.max(1000, Number(args.timeoutMs || 120000))) });
+      const result = await this.commandRunner({ command, cwd: fs.realpathSync(cwd), signal, timeoutMs: Math.min(120000, Math.max(1000, Number(args.timeoutMs || 120000))) });
       return compact(`exit ${result.exitCode}${result.timedOut ? " · timed out" : ""}\n${result.stdout || ""}${result.stderr ? `\nSTDERR\n${result.stderr}` : ""}`, 24000);
     }
     if (name === "workspace_git") {
       const command = gitCommand(args);
-      const result = await this.commandRunner({ command, cwd: fs.realpathSync(cwd), timeoutMs: Math.min(120000, Math.max(1000, Number(args.timeoutMs || 120000))) });
+      const result = await this.commandRunner({ command, cwd: fs.realpathSync(cwd), signal, timeoutMs: Math.min(120000, Math.max(1000, Number(args.timeoutMs || 120000))) });
       return compact(`git ${args.operation} · exit ${result.exitCode}${result.timedOut ? " · timed out" : ""}\n${result.stdout || ""}${result.stderr ? `\nSTDERR\n${result.stderr}` : ""}`, 24000);
     }
     throw new Error(`Unsupported API worker tool: ${name}`);
   }
 }
 
-module.exports = { ApiAgentRuntime, assertSelectedWorkspaceCommand, gitCommand, APPROVAL_STATES };
+module.exports = { ApiAgentRuntime, assertSelectedWorkspaceCommand, gitCommand, APPROVAL_STATES, tools };

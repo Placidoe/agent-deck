@@ -22,7 +22,9 @@ function resolveCodexBinary() {
 class CodexAppServer extends EventEmitter {
   constructor(options = {}) {
     super();
-    this.binary = options.binary || resolveCodexBinary();
+    // Native Harness mode constructs compatibility services but must not even
+    // probe a Codex installation unless an external task actually needs it.
+    this.binary = options.binary || null;
     this.spawnProcess = options.spawnProcess || spawn;
     this.proc = null;
     this.nextId = 1;
@@ -43,6 +45,7 @@ class CodexAppServer extends EventEmitter {
   }
 
   async #start() {
+    this.binary ||= resolveCodexBinary();
     const appPath = ["/opt/homebrew/bin", "/usr/local/bin", process.env.PATH || ""].join(":");
     const proc = this.spawnProcess(this.binary, [
       "app-server",

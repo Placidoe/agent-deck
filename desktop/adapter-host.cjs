@@ -36,15 +36,35 @@ function manifestFor(providerId) {
 }
 
 class ProviderAdapterHost {
-  constructor({ codex, apiRuntime } = {}) {
+  constructor({ codex, apiRuntime, nativeHarness, onExternalEvent } = {}) {
     this.runtimes = new Map([["codex", codex], ["deepseek", apiRuntime], ["openai_compatible", apiRuntime]]);
+    this.nativeHarness = nativeHarness;
+    this.customManifests = new Map();
+    this.onExternalEvent = onExternalEvent;
   }
 
-  manifest(providerId) { return manifestFor(providerId); }
+  manifest(providerId) { return this.customManifests.get(providerId) || manifestFor(providerId); }
+
+  // Trusted host code only. No arbitrary npm/module execution from the renderer.
+  registerExternal({ manifest, runtime }) {
+    if (!manifest?.id || manifest.stage !== "mission_ready") throw new Error("A certified adapter manifest is required");
+    for (const method of ["createThread", "sendTurn", "steer", "interrupt", "resumeThread", "readThread", "on", "resolveApproval", "pendingApproval"]) {
+      if (typeof runtime?.[method] !== "function") throw new Error(`Adapter is missing ${method}`);
+    }
+    if (["deepseek", "openai_compatible"].includes(manifest.id)) throw new Error("Model providers are not external coding agents");
+    if (this.runtimes.get(manifest.id)) throw new Error("Cannot replace an attached adapter; create a new host after its active runs have drained");
+    this.customManifests.set(manifest.id, structuredClone(manifest));
+    this.runtimes.set(manifest.id, runtime);
+    if (this.onExternalEvent) runtime.on("event", this.onExternalEvent);
+  }
 
   runtimeFor(mission) {
     const providerId = mission?.provider || "codex";
-    const manifest = manifestFor(providerId);
+    if (mission?.runtimeMode === "agent_deck") {
+      if (!["deepseek", "openai_compatible"].includes(providerId) || !this.nativeHarness) throw new Error("Agent Deck Harness/model adapter unavailable; no Codex fallback will be used");
+      return this.nativeHarness;
+    }
+    const manifest = this.manifest(providerId);
     const runtime = this.runtimes.get(providerId);
     if (manifest.stage !== "mission_ready" || !runtime) {
       throw new Error(`${providerId} is ${manifest.stage.replaceAll("_", " ")}: ${manifest.blockedBy || "its local runtime is unavailable"}`);

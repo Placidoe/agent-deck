@@ -8,6 +8,20 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { resolveDebugCwd, runDebugCommand } = require("../desktop/terminal-service.cjs");
 
+test("native cancellation terminates its owned shell process group promptly", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-deck-cancel-"));
+  try {
+    const controller = new AbortController();
+    const started = Date.now();
+    const pending = runDebugCommand({ command: "sleep 30", cwd: directory, signal: controller.signal });
+    const timer = setTimeout(() => controller.abort(), 80);
+    const result = await pending;
+    clearTimeout(timer);
+    assert.equal(result.interrupted, true);
+    assert.ok(Date.now() - started < 3000);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
 function withTempDir(callback) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-deck-terminal-"));
   try { return callback(directory); } finally { fs.rmSync(directory, { recursive: true, force: true }); }

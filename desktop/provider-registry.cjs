@@ -57,11 +57,12 @@ function validateEndpoint(value) {
 }
 
 class ProviderRegistry {
-  constructor({ userDataPath, safeStorage = null, spawn = spawnSync, codexStatus = null } = {}) {
+  constructor({ userDataPath, safeStorage = null, spawn = spawnSync, codexStatus = null, manifestLookup = manifestFor } = {}) {
     this.userDataPath = userDataPath || process.cwd();
     this.safeStorage = safeStorage;
     this.spawn = spawn;
     this.codexStatus = codexStatus;
+    this.manifestLookup = manifestLookup;
     this.configPath = path.join(this.userDataPath, "provider-profiles.json");
     this.config = this.#read();
   }
@@ -78,25 +79,56 @@ class ProviderRegistry {
     fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2), "utf8");
   }
 
+  runtimeSettings() {
+    return { mode: "external", externalProvider: "codex", modelProvider: "deepseek", ...this.config.runtime };
+  }
+
+  saveRuntimeSettings(input = {}) {
+    const next = { ...this.runtimeSettings(), ...input };
+    if (!["external", "agent_deck"].includes(next.mode)) throw new Error("Unknown execution mode");
+    if (!["codex", "claude_code", "trae"].includes(next.externalProvider)) throw new Error("Select an external coding agent");
+    if (!["deepseek", "openai_compatible"].includes(next.modelProvider)) throw new Error("Select a model API for Agent Deck Harness");
+    // Do not persist arbitrary renderer fields alongside encrypted credentials.
+    this.config.runtime = { mode: next.mode, externalProvider: next.externalProvider, modelProvider: next.modelProvider };
+    this.#write();
+    return this.runtimeSettings();
+  }
+
+  selectRuntime(input = {}) {
+    const settings = this.runtimeSettings();
+    const mode = input.runtimeMode || settings.mode;
+    const provider = input.provider || (mode === "agent_deck" ? settings.modelProvider : settings.externalProvider);
+    if (!["external", "agent_deck"].includes(mode)) throw new Error("Unknown execution mode");
+    if (mode === "agent_deck" && PROVIDERS[provider]?.kind !== "api") throw new Error("Agent Deck Harness requires a model API, not a coding-agent session");
+    if (mode === "external" && !["codex", "claude_code", "trae"].includes(provider)) throw new Error("Use Agent Deck Harness mode for new API missions");
+    if (mode === "agent_deck" && !this.config.api?.[provider]?.verifiedAt) throw new Error("Save and verify the model API in Settings before starting Agent Deck Harness");
+    return { runtimeMode: mode, provider };
+  }
+
   list() {
     return Object.values(PROVIDERS).map((provider) => {
-      const manifest = manifestFor(provider.id);
+      const manifest = this.manifestLookup(provider.id);
       return { ...provider, protocol: manifest.protocol, stage: manifest.stage, blockedBy: manifest.blockedBy || null, capabilities: [...provider.capabilities], canonicalCapabilities: [...manifest.capabilities] };
     });
   }
 
   async status() {
     const profiles = this.config.api || {};
-    const codex = this.codexStatus ? await this.codexStatus().catch((error) => ({ available: false, error: error.message })) : { available: false };
+    const runtime = this.runtimeSettings();
+    const codex = runtime.mode === "external" && runtime.externalProvider === "codex" && this.codexStatus ? await this.codexStatus().catch((error) => ({ available: false, error: error.message })) : { available: false, inactive: true };
     return this.list().map((provider) => {
-      if (provider.id === "codex") return { ...provider, installed: Boolean(codex.available), connected: Boolean(codex.authenticated), version: codex.version || null, error: codex.error || null, mode: "native", missionEnabled: Boolean(codex.available && codex.authenticated) };
+      const selectedForMode = provider.id === (runtime.mode === "agent_deck" ? runtime.modelProvider : runtime.externalProvider);
+      const runtimeEligible = runtime.mode === "agent_deck" ? provider.kind === "api" : ["codex", "claude_code", "trae"].includes(provider.id);
+      const selection = { runtimeMode: runtime.mode, runtimeEligible, selectedForMode };
+      if (provider.id === "codex") return { ...provider, ...selection, installed: Boolean(codex.available), connected: Boolean(codex.authenticated), version: codex.version || null, error: codex.error || null, mode: codex.inactive ? "inactive" : "native", missionEnabled: runtimeEligible && Boolean(codex.available && codex.authenticated) };
       if (provider.kind === "cli") {
         const cli = commandInfo(provider.binary, this.spawn);
-        return { ...provider, ...cli, connected: cli.installed, mode: cli.installed ? "local_cli" : "not_installed", missionEnabled: false };
+        return { ...provider, ...selection, ...cli, connected: cli.installed, mode: cli.installed ? "local_cli" : "not_installed", missionEnabled: runtimeEligible && cli.installed && provider.stage === "mission_ready" };
       }
       const profile = profiles[provider.id] || {};
       return {
         ...provider,
+        ...selection,
         installed: true,
         connected: Boolean(profile.hasSecret && profile.endpoint && profile.model && profile.verifiedAt),
         configured: Boolean(profile.endpoint || profile.model || profile.hasSecret),
@@ -104,7 +136,7 @@ class ProviderRegistry {
         model: profile.model || provider.defaultModel || "",
         verifiedAt: profile.verifiedAt || null,
         mode: profile.verifiedAt ? "verified" : profile.hasSecret ? "configured" : "needs_key",
-        missionEnabled: Boolean(profile.hasSecret && profile.endpoint && profile.model && profile.verifiedAt),
+        missionEnabled: runtimeEligible && Boolean(profile.hasSecret && profile.endpoint && profile.model && profile.verifiedAt),
       };
     });
   }
@@ -126,7 +158,7 @@ class ProviderRegistry {
       endpoint, model,
       hasSecret: secret ? true : Boolean(current.hasSecret),
       secret: secret ? this.safeStorage.encryptString(secret).toString("base64") : current.secret || null,
-      verifiedAt: secret ? null : current.verifiedAt || null,
+      verifiedAt: secret || current.endpoint !== endpoint || current.model !== model ? null : current.verifiedAt || null,
       updatedAt: new Date().toISOString(),
     };
     this.#write();

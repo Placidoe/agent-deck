@@ -34,6 +34,15 @@ contextBridge.exposeInMainWorld("agentDeckDesktop", {
       return () => ipcRenderer.removeListener("codex:event", listener);
     },
   },
+  runtime: {
+    get: () => ipcRenderer.invoke("runtime:get"),
+    set: (input) => ipcRenderer.invoke("runtime:set", input),
+    onChange: (callback) => {
+      const listener = (_event, settings) => callback(settings);
+      ipcRenderer.on("runtime:changed", listener);
+      return () => ipcRenderer.removeListener("runtime:changed", listener);
+    },
+  },
   providers: {
     list: () => ipcRenderer.invoke("providers:list"),
     saveApiProfile: (input) => ipcRenderer.invoke("providers:save-api-profile", input),

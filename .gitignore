@@ -16,4 +16,4 @@ release-*/
 *.sqlite-shm
 *.sqlite-wal
 tmp/
-
+qa/

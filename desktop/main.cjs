@@ -9,6 +9,7 @@ const { ArtifactService } = require("./artifact-service.cjs");
 const { PublisherService } = require("./publisher-service.cjs");
 const { ProviderRegistry } = require("./provider-registry.cjs");
 const { ApiAgentRuntime } = require("./api-agent-runtime.cjs");
+const { NativeHarnessRuntime } = require("./native-harness-runtime.cjs");
 const { ProviderAdapterHost } = require("./adapter-host.cjs");
 const { resolveDebugCwd, runDebugCommand } = require("./terminal-service.cjs");
 
@@ -21,6 +22,7 @@ let missionStore = null;
 let publisherService = null;
 let providerRegistry = null;
 let apiRuntime = null;
+let nativeHarness = null;
 let adapterHost = null;
 let missionReconcileTimer = null;
 const isPrimaryInstance = app.requestSingleInstanceLock();
@@ -163,6 +165,7 @@ ipcMain.handle("terminal:run", async (_event, input) => {
 });
 
 ipcMain.handle("codex:status", async () => {
+  if (providerRegistry?.runtimeSettings().mode === "agent_deck") return { available: false, authenticated: false, inactive: true, runtimeMode: "agent_deck", models: [] };
   try {
     return await codex.getStatus();
   } catch (error) {
@@ -181,8 +184,11 @@ ipcMain.handle("codex:archive-thread", async (_event, threadId) => {
   await codex.archiveThread(threadId);
   return { canceled: false };
 });
-ipcMain.handle("codex:create-thread", (_event, input) => codex.createThread(input));
-ipcMain.handle("codex:start-session", (_event, input) => codex.startSession(input));
+function assertExternalSessionMode() {
+  if (providerRegistry?.runtimeSettings().mode === "agent_deck") throw new Error("当前使用 Agent Deck Harness，请从工作入口开始任务；独立 Codex 会话只在外部模式可创建。");
+}
+ipcMain.handle("codex:create-thread", (_event, input) => { assertExternalSessionMode(); return codex.createThread(input); });
+ipcMain.handle("codex:start-session", (_event, input) => { assertExternalSessionMode(); return codex.startSession(input); });
 ipcMain.handle("codex:send-turn", (_event, input) => codex.sendTurn(input));
 ipcMain.handle("codex:steer", (_event, input) => codex.steer(input));
 ipcMain.handle("codex:interrupt", (_event, input) => codex.interrupt(input));
@@ -191,6 +197,13 @@ ipcMain.handle("codex:realtime-start", (_event, input) => codex.startRealtime(in
 ipcMain.handle("codex:realtime-stop", (_event, input) => codex.stopRealtime(input));
 
 ipcMain.handle("providers:list", async () => providerRegistry?.status() || []);
+ipcMain.handle("runtime:get", () => providerRegistry?.runtimeSettings());
+ipcMain.handle("runtime:set", (_event, input) => {
+  if (!providerRegistry) throw new Error("Runtime settings are not ready");
+  const settings = providerRegistry.saveRuntimeSettings(input);
+  mainWindow?.webContents.send("runtime:changed", settings);
+  return settings;
+});
 ipcMain.handle("providers:save-api-profile", async (_event, input) => {
   if (!providerRegistry) throw new Error("Provider runtime is not ready");
   const profile = providerRegistry.saveApiProfile(input || {});
@@ -390,16 +403,24 @@ app.whenReady().then(() => {
     userDataPath: app.getPath("userData"),
     safeStorage,
     codexStatus: () => codex.getStatus(),
+    manifestLookup: (id) => adapterHost ? adapterHost.manifest(id) : require("./adapter-host.cjs").manifestFor(id),
   });
   apiRuntime = new ApiAgentRuntime({ providerRegistry });
-  adapterHost = new ProviderAdapterHost({ codex, apiRuntime });
-  const worktrees = new WorktreeManager(path.join(app.getPath("userData"), "worktrees"));
-  missionOrchestrator = new MissionOrchestrator({ codex, apiRuntime, adapterHost, store: missionStore, worktrees });
-  apiRuntime.on("event", (event) => {
+  nativeHarness = new NativeHarnessRuntime({ providerRegistry, rootDirectory: path.join(app.getPath("userData"), "native-harness") });
+  const forwardProviderEvent = (event) => {
     missionOrchestrator?.handleCodexEvent(event).catch((error) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("mission:error", { message: error.message });
     });
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("provider:event", { provider: "api", ...event });
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("provider:event", event);
+  };
+  adapterHost = new ProviderAdapterHost({ codex, apiRuntime, nativeHarness, onExternalEvent: forwardProviderEvent });
+  const worktrees = new WorktreeManager(path.join(app.getPath("userData"), "worktrees"));
+  missionOrchestrator = new MissionOrchestrator({ codex, apiRuntime, adapterHost, selectRuntime: (input) => providerRegistry.selectRuntime(input), store: missionStore, worktrees });
+  for (const runtime of [apiRuntime, nativeHarness]) runtime.on("event", (event) => {
+    missionOrchestrator?.handleCodexEvent(event).catch((error) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("mission:error", { message: error.message });
+    });
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("provider:event", { runtimeMode: runtime === nativeHarness ? "agent_deck" : "external", ...event });
   });
   artifactService = new ArtifactService({ store: missionStore, dialog, shell, clipboard, downloadsPath: app.getPath("downloads") });
   publisherService = new PublisherService({ BrowserWindow, parentWindow: () => mainWindow });

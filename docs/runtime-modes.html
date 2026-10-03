@@ -1,0 +1,21 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Deck · 执行模式与自有 Harness</title>
+<style>body{margin:0;background:#111419;color:#dbe1e9;font:16px/1.8 system-ui,-apple-system,sans-serif}main{max-width:960px;margin:auto;padding:56px 28px}h1{font-size:32px;line-height:1.3}h2{margin-top:40px;font-size:23px}p,li{color:#afb9c7}.tag{color:#97bbeb;font-size:13px}.diagram{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:28px 0}.box{padding:22px;border:1px solid #38404c;border-radius:12px;background:#1b2027}.shared{grid-column:1/-1;text-align:center}.flow{display:block;margin:10px 0;color:#99bce9}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:12px;text-align:left;border-bottom:1px solid #303842;vertical-align:top}code{color:#adc8eb}a{color:#91b8ea}aside{padding:16px 20px;background:#232a35;border-radius:10px}@media(max-width:650px){main{padding:28px 18px}.diagram{grid-template-columns:1fr}.shared{grid-column:auto}}</style>
+<main><span class="tag">ARCHITECTURE NOTE · 2026-10-04 · Beta</span><h1>同一个工作台，两种执行所有权</h1><p>我希望 Agent Deck 不再绑定某一个 Coding Agent。用户管理的是工作、证据、成果和需要自己做的决定；执行引擎应当可替换。现有桌面能力继续复用，接下来优先建设自己的 Harness。</p>
+<section class="diagram" aria-label="两种模式架构图">
+<div class="box shared"><strong>Agent Deck 工作台</strong><br>工作需求 → 审批 / 恢复 / 验收 → 成果<br><span class="flow">设置总开关：只选择新任务的模式；运行中的任务固定原模式</span></div>
+<div class="box"><strong>外部 Coding Agent + 轻量 Harness</strong><span class="flow">Mission 控制面 ↓ ProviderAdapterHost</span><span class="flow">外部 Agent ↓ 自己的推理 / 工具循环</span>现已接入：Codex<br>适配边界：Claude Code / Trae（完整执行尚未开放）</div>
+<div class="box"><strong>Agent Deck Harness</strong><span class="flow">Mission 控制面 ↓ NativeHarnessRuntime</span><span class="flow">独立 SDK：Manager → Executor → Auditor</span><span class="flow">模型 API（仅推理） + 主进程受控工具</span>执行上下文有上限；验证器使用新的只读上下文，不继承执行轨迹</div>
+<div class="box shared"><strong>共享主进程能力</strong><br>隔离工作区 · 文件安全边界 · 人工权限批准 · SQLite Mission 账本 · HTML 成果预览<br><strong>自有执行补充</strong>：本地 SDK checkpoint / 事件日志、运行阶段、停止预算和恢复提示</div></section>
+<h2>操作方法</h2><ol><li>进入「设置 → 执行引擎」，选择 <strong>Agent Deck Harness</strong>。</li><li>选择 DeepSeek 或兼容 API，在下方保存加密 Key、Endpoint、模型，并测试连接。</li><li>从「工作」创建需求。新 Mission 固定记录模式和模型；API 未就绪就明确阻止启动，不偷偷用 Codex。</li><li>在执行详情查看会话、结果、产物、运行和证据。需要写入或执行 Bash 时，手动批准。</li></ol>
+<h2>这次做到哪里</h2><table><thead><tr><th>能力</th><th>实际范围</th></tr></thead><tbody>
+<tr><td>摆脱 Codex</td><td>新的自有模式执行不需要 Codex 安装、账号或 app-server。旧 Codex 任务仍绑定旧引擎，打开/恢复它们仍可能使用 Codex。</td></tr>
+<tr><td>执行循环</td><td>真实调用独立 SDK；Manager 是规则驱动单执行器调度，不额外消耗一次规划模型调用。Executor 通过 API 与受控工具执行。</td></tr>
+<tr><td>独立验证</td><td>Worker 的 Auditor 使用新的上下文和只读工具，必须取得主进程实际观察回执。没有观察回执，即使模型说 passed 也不能完成。规划只校验输出结构，不冒充执行验证。</td></tr>
+<tr><td>性能与预算</td><td>每个角色每轮最多 8 次模型请求、单次请求 90 秒上限、单 Turn 五分钟上限、最多 3 轮执行/修复、上下文 96,000 字符上限、单次最多输出 8,192 tokens、每 Turn 32,000 已报告 tokens 上限。没有凭空宣称超过 Codex；需要同模型评测。</td></tr>
+<tr><td>恢复</td><td>线程摘要不含 API Key；运行 checkpoint 与事件落盘。重启把未终止的线程标为中断，让用户检查后重试，不自动重放写入。当前 portable JSON store 不是事务存储。</td></tr>
+<tr><td>热插拔</td><td>可信主进程可注册满足生命周期契约的外部适配器。当前没有用户可安装插件市场，也没有承诺 Claude/Trae 已能调度。</td></tr>
+</tbody></table>
+<aside>目前是可执行的 Beta，不是完整替代所有 Coding Agent 能力。尚缺通用 Web 工具、实时流式 token、外部 CLI 适配、事务型 SDK 存储/OCC、自动 crash-resume 和统一独立会话 UI。自有验证器暂不执行任意测试命令，不能把一次文件读取视为所有测试都通过。</aside>
+<h2>接下来优先做</h2><ol><li>在同模型、同工具权限下评测简单/中等/复杂任务的耗时、成本与质量，确定验证成本是否值得。</li><li>验证工具升级：安全的测试执行器、可核验的测试结果与产物证据，不依赖自然语言判定。</li><li>事务事件账本、租约/OCC、崩溃恢复与幂等工具操作。</li><li>流式输出、阶段耗时和可操作的暂停/继续入口；再扩展 CLI 适配器。</li></ol>
+<h2>验证方式</h2><p><code>npm run test:native-harness</code>：无 Codex、模式固定、人工批准写入、独立读取验证、密钥不落线程记录、恢复不执行、schema 拒绝和热插拔契约。<code>node scripts/runtime-mode-qa.mjs</code>：临时数据目录、不存在的 Codex binary、真实桌面模式切换和两个窗口尺寸。测试使用离线模型响应，不能当作真实 DeepSeek 质量评测。</p>
+</main></html>

@@ -69,3 +69,11 @@ artifacts/  设计 QA 的可审计截图和结构化报告
 ```
 
 设计原则、架构和测试证据见 [`docs/`](docs/)。安装包与浏览器构建均可由源码生成，故不提交到 Git。
+
+## 两种执行模式
+
+在「设置 → 执行引擎」切换：外部 Coding Agent（热插拔 + 轻量编排），或 Agent Deck Harness（自有 SDK，Beta）。后者使用 DeepSeek / 兼容模型 API，不需要 Codex 安装或登录；需要先配置并测试 API 连接。切换只影响新工作，现有 Mission 的模式保持不变。
+
+自有模式的会话在工作执行详情中查看，不复用独立 Codex 会话面板。写入、Bash、Git 变更仍需逐次人工批准。当前独立验证器只允许文件检索/读取，不支持任意测试执行；Claude Code/Trae 完整执行适配尚未开放。见 [架构与范围](docs/runtime-modes.html)。
+
+`npm run test:native-harness` 运行离线执行链路回归；`node scripts/runtime-mode-qa.mjs` 使用隔离临时数据验证桌面切换。SDK 的 portable 构建随 App 源码一起提供，打包不依赖相邻仓库。修改独立 SDK 后，运行 `npm run harness:sync` 更新受版本管理的 SDK 副本（保留 MIT 许可证）。

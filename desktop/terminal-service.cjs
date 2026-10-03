@@ -31,7 +31,8 @@ function appendOutput(current, chunk) {
   return `${current}${String(chunk || "").slice(0, MAX_OUTPUT_BYTES - current.length)}`;
 }
 
-function runDebugCommand({ command, cwd, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+function runDebugCommand({ command, cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal }) {
+  signal?.throwIfAborted();
   const normalizedCommand = String(command || "").trim();
   if (!normalizedCommand) throw new Error("Enter a Bash command to run");
   if (normalizedCommand.length > MAX_COMMAND_LENGTH) throw new Error(`Debug commands are limited to ${MAX_COMMAND_LENGTH} characters`);
@@ -42,22 +43,42 @@ function runDebugCommand({ command, cwd, timeoutMs = DEFAULT_TIMEOUT_MS }) {
     let stderr = "";
     let timedOut = false;
     let settled = false;
+    let killTimer;
+    let interrupted = false;
     const child = spawn(shellPath, ["-lc", normalizedCommand], {
       cwd,
       env: { ...process.env, TERM: "xterm-256color", AGENT_DECK_DEBUG: "1" },
       stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
+    const stop = () => {
+      if (settled) return;
+      const kill = (kind) => {
+        try {
+          if (process.platform !== "win32" && child.pid) process.kill(-child.pid, kind);
+          else child.kill(kind);
+        } catch (error) { if (error.code !== "ESRCH") child.kill(kind); }
+      };
+      kill("SIGTERM");
+      killTimer = setTimeout(() => kill("SIGKILL"), 1500);
+      killTimer.unref?.();
+    };
+    const abort = () => { interrupted = true; stop(); };
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ command: normalizedCommand, cwd, stdout, stderr, durationMs: Date.now() - startedAt, truncated: stdout.length >= MAX_OUTPUT_BYTES || stderr.length >= MAX_OUTPUT_BYTES, ...result });
+      clearTimeout(killTimer);
+      signal?.removeEventListener("abort", abort);
+      resolve({ command: normalizedCommand, cwd, stdout, stderr, interrupted, durationMs: Date.now() - startedAt, truncated: stdout.length >= MAX_OUTPUT_BYTES || stderr.length >= MAX_OUTPUT_BYTES, ...result });
     };
     child.stdout.on("data", (chunk) => { stdout = appendOutput(stdout, chunk); });
     child.stderr.on("data", (chunk) => { stderr = appendOutput(stderr, chunk); });
-    child.on("error", (error) => { if (!settled) { settled = true; clearTimeout(timer); reject(error); } });
+    child.on("error", (error) => { if (!settled) { settled = true; clearTimeout(timer); clearTimeout(killTimer); signal?.removeEventListener("abort", abort); reject(error); } });
     child.on("close", (code, signal) => finish({ exitCode: code == null ? 1 : code, signal: signal || null, timedOut }));
-    const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, Math.max(1_000, Math.min(Number(timeoutMs) || DEFAULT_TIMEOUT_MS, DEFAULT_TIMEOUT_MS)));
+    const timer = setTimeout(() => { timedOut = true; stop(); }, Math.max(1_000, Math.min(Number(timeoutMs) || DEFAULT_TIMEOUT_MS, DEFAULT_TIMEOUT_MS)));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
   });
 }
 

@@ -38,11 +38,13 @@ function compactLedgerValue(value, depth = 0) {
 function providerEventKey(event, threadId) {
   const method = event?.method;
   if (!method || !threadId || method === "turn/plan/updated") return null;
+  if (method === "harness/event") return `${method}:${threadId}:${event.params?.event?.id}`;
   const itemId = event.params?.item?.id;
   const turnId = event.params?.turn?.id || event.params?.turnId;
   const requestId = event.id;
   if (method === "thread/tokenUsage/updated") {
-    const total = event.params?.tokenUsage?.last?.totalTokens ?? event.params?.tokenUsage?.total?.totalTokens ?? "unknown";
+    const usage = event.params?.tokenUsage?.last || event.params?.tokenUsage?.total || {};
+    const total = usage.totalTokens ?? usage.total_tokens ?? "unknown";
     return `${method}:${threadId}:${turnId || "turn"}:${total}`;
   }
   const identity = itemId || requestId || turnId;
@@ -196,7 +198,7 @@ function mainAgentFollowupPrompt(message) {
 USER INSTRUCTION
 ${message}
 
-Return a concise user-facing message plus tasksToCreate. Use an empty tasksToCreate array when no new worker is needed. When the user asks to create, add, delegate to, or spawn a subagent, tasksToCreate must contain the concrete new Worker task definition. You are proposing tasks to Agent Deck; never claim a Worker was created or started yourself. Say that you requested or prepared it. Agent Deck will persist the task, create the isolated worktree and Codex thread, and expose the real status on the canvas. Every new task key must be unique within the mission. Dependencies may reference existing task keys.\n\n${FAST_EXECUTION_CONTRACT}`;
+Return a concise user-facing message plus tasksToCreate. Use an empty tasksToCreate array when no new worker is needed. When the user asks to create, add, delegate to, or spawn a subagent, tasksToCreate must contain the concrete new Worker task definition. You are proposing tasks to Agent Deck; never claim a Worker was created or started yourself. Say that you requested or prepared it. Agent Deck will persist the task, create the isolated worktree and provider thread, and expose the real status on the canvas. Every new task key must be unique within the mission. Dependencies may reference existing task keys.\n\n${FAST_EXECUTION_CONTRACT}`;
 }
 
 function taskPrompt(mission, task, mergeState = null, contextKernel = null, route = workerPerformanceRoute(task, { mergeConflict: Boolean(mergeState?.conflict) })) {
@@ -218,11 +220,12 @@ Inspect the implementation and tests, make the smallest correct patch, add focus
 }
 
 class MissionOrchestrator extends EventEmitter {
-  constructor({ codex, apiRuntime = null, adapterHost = null, store, worktrees }) {
+  constructor({ codex, apiRuntime = null, adapterHost = null, selectRuntime = null, store, worktrees }) {
     super();
     this.codex = codex;
     this.apiRuntime = apiRuntime;
     this.adapterHost = adapterHost;
+    this.selectRuntime = selectRuntime;
     this.store = store;
     this.worktrees = worktrees;
     this.dispatching = new Set();
@@ -370,6 +373,7 @@ class MissionOrchestrator extends EventEmitter {
   }
 
   async create(input) {
+    if (this.selectRuntime) input = { ...input, ...this.selectRuntime(input) };
     if (!input.cwd) throw new Error("Choose a local workspace before creating a mission");
     const adaptiveRoute = classifyMissionRequest(input);
     const mission = this.store.createMission({ ...input, maxWorkers: adaptiveRoute.maxWorkers });
@@ -459,7 +463,7 @@ class MissionOrchestrator extends EventEmitter {
             included: contextKernel.stats.included, withheld: contextKernel.stats.withheld,
           }, { taskId: candidate.id, threadId: created.thread.id });
           const prompt = executionPolicy(mission) + taskPrompt(mission, candidate, worktree, contextKernel, route);
-          const turn = await runtime.sendTurn({ threadId: created.thread.id, cwd: worktree.path, prompt, model: mission.model, effort: route.effort, ...(direct ? {} : { outputSchema: taskResultSchema }) });
+          const turn = await runtime.sendTurn({ threadId: created.thread.id, cwd: worktree.path, prompt, model: mission.model, effort: route.effort, ...(direct && mission.runtimeMode !== "agent_deck" ? {} : { outputSchema: taskResultSchema }) });
           this.store.updateTask(candidate.id, { activeTurnId: turn.id, phase: worktree.conflict ? "resolving_dependencies" : "working" });
           this.store.startRun({ missionId, taskId: candidate.id, agentId: `${missionId}:${candidate.key}`, threadId: created.thread.id, turnId: turn.id, phase: worktree.conflict ? "resolving_dependencies" : "working", triggerType: "scheduler.dispatch" });
           this.store.appendEvent(missionId, "worker.turn.started", { taskKey: candidate.key, threadId: created.thread.id, turnId: turn.id, mergeRecovery: Boolean(worktree.conflict), pendingRefs: worktree.pendingRefs || [], performanceRoute: route.id, reasoningEffort: route.effort, promptEstimatedTokens: promptTokenEstimate(prompt), contextTokenBudget: route.contextTokenBudget, maxToolBatches: route.maxToolBatches, reportContract: route.reportTask ? "html_full" : "native_compact" }, { taskId: candidate.id, threadId: created.thread.id });
@@ -560,8 +564,11 @@ class MissionOrchestrator extends EventEmitter {
   async resolveApproval({ missionId, requestId, decision }) {
     const mission = this.store.getMission(missionId);
     if (!mission) throw new Error("Mission not found");
-    if (!["deepseek", "openai_compatible"].includes(mission.provider)) throw new Error("This approval belongs to the native provider, not the API Harness");
-    const result = await this.apiRuntime.resolveApproval({ requestId, decision });
+    if (mission.provider === "codex") throw new Error("Use the external Codex approval endpoint for this mission");
+    const runtime = this.#runtime(mission);
+    const pending = runtime.pendingApproval?.(requestId);
+    if (!pending || this.store.findMissionRecordByThread(pending.threadId)?.id !== missionId) throw new Error("This pending approval does not belong to the selected mission");
+    const result = await runtime.resolveApproval({ requestId, decision });
     this.store.appendEvent(missionId, "provider.approval.user_decision", { requestId, decision }, { threadId: result.threadId || null });
     this.#emit(missionId);
     return result;
@@ -573,12 +580,12 @@ class MissionOrchestrator extends EventEmitter {
     const message = String(text || "").trim();
     if (!message) throw new Error("Message cannot be empty");
     const initialTask = taskId ? this.store.getTask(taskId) : null;
-    if (taskId && (!initialTask || initialTask.missionId !== missionId || !initialTask.agentThreadId)) throw new Error("This worker has no real Codex thread yet");
+    if (taskId && (!initialTask || initialTask.missionId !== missionId || !initialTask.agentThreadId)) throw new Error("This worker has no real provider thread yet");
     if (!taskId && !mission.mainThreadId) throw new Error("This mission has no real Main Agent thread yet");
     const targetName = initialTask?.agentRole || "Main Agent";
     const threadId = initialTask?.agentThreadId || mission.mainThreadId;
-    // Persist and announce before crossing the Codex process boundary. This is
-    // the receipt the UI can render immediately, even if Codex is slow or down.
+    // Persist and announce before crossing the runtime boundary. This receipt
+    // can render immediately, even if the provider is slow or down.
     const receipt = this.store.addMessage({ missionId, fromAgent: "You", toAgent: targetName, topic: "agent.steer", messageType: "command", text: message, deliveryStatus: "sending", source: "user" });
     this.store.appendEvent(missionId, "user.message.queued", { messageId: receipt.id, toAgent: targetName }, { taskId: initialTask?.id || null, threadId });
     this.#emit(missionId);
@@ -589,7 +596,13 @@ class MissionOrchestrator extends EventEmitter {
         if (!latestMission) throw new Error("Mission was removed before the message could be delivered");
         const runtime = this.#runtime(latestMission);
         if (!taskId) {
-          if (latestMission.activeTurnId) await runtime.steer({ threadId, turnId: latestMission.activeTurnId, prompt: message });
+          if (latestMission.activeTurnId) {
+            const turn = await runtime.steer({ threadId, turnId: latestMission.activeTurnId, prompt: message });
+            if (latestMission.runtimeMode === "agent_deck") {
+              this.store.updateMission(missionId, { activeTurnId: turn.id, status: latestMission.spec ? latestMission.status : "planning", error: null });
+              this.store.startRun({ missionId, agentId: `${missionId}:main`, threadId, turnId: turn.id, phase: "planning", triggerType: "user.message" });
+            }
+          }
           else {
             const retryPlanning = latestMission.status === "failed" && !latestMission.spec && !latestMission.tasks.length;
             if (retryPlanning) this.store.updateMission(missionId, { status: "planning", error: null });
@@ -610,8 +623,15 @@ class MissionOrchestrator extends EventEmitter {
             this.store.startRun({ missionId, agentId: `${missionId}:main`, threadId, turnId: turn.id, phase: retryPlanning ? "planning" : "followup", triggerType: retryPlanning ? "mission.retry_plan" : "user.message" });
           }
         } else {
-          if (!latestTask?.agentThreadId) throw new Error("This worker no longer has a real Codex thread");
-          if (latestTask.activeTurnId && latestTask.status === "running") await runtime.steer({ threadId, turnId: latestTask.activeTurnId, prompt: message });
+          if (!latestTask?.agentThreadId) throw new Error("This worker no longer has a real provider thread");
+          if (latestTask.activeTurnId && (latestTask.status === "running" || (latestMission.runtimeMode === "agent_deck" && latestTask.status === "waiting_approval"))) {
+            const turn = await runtime.steer({ threadId, turnId: latestTask.activeTurnId, prompt: message });
+            if (latestMission.runtimeMode === "agent_deck") {
+              this.store.updateTask(latestTask.id, { status: "running", phase: "working", activeTurnId: turn.id, error: null });
+              this.store.startRun({ missionId, taskId: latestTask.id, agentId: `${missionId}:${latestTask.key}`, threadId, turnId: turn.id, phase: "working", triggerType: "user.message" });
+              this.store.updateMission(missionId, { status: "running", error: null });
+            }
+          }
           else {
             const route = workerPerformanceRoute(latestTask, { direct: latestMission.spec?.runtime?.mode === "direct" });
             const artifactContract = route.reportTask ? HTML_FIRST_DELIVERABLE : NATIVE_ARTIFACT_CONTRACT;
@@ -653,6 +673,16 @@ class MissionOrchestrator extends EventEmitter {
   }
 
   async handleCodexEvent(event) {
+    if (["harness/event", "harness/phase"].includes(event.method)) {
+      const threadId = event.params?.threadId;
+      const mission = threadId && this.store.findMissionRecordByThread(threadId);
+      if (!mission) return;
+      const task = this.store.findTaskByThread(threadId);
+      if (task && event.method === "harness/phase") this.store.updateTask(task.id, { phase: event.params.phase });
+      this.store.appendEvent(mission.id, `provider.${event.method}`, compactLedgerValue(event.params), { taskId: task?.id, threadId, dedupeKey: providerEventKey(event, threadId) });
+      this.#emit(mission.id);
+      return;
+    }
     const trackedMethods = new Set(["turn/started", "turn/completed", "turn/plan/updated", "thread/tokenUsage/updated", "item/started", "item/completed", "item/execution/started", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/gitOperation/requestApproval", "item/approval/resolved", "item/tool/call"]);
     if (!trackedMethods.has(event.method)) return;
     const threadId = event.params?.threadId || event.params?.thread?.id;
@@ -711,7 +741,7 @@ class MissionOrchestrator extends EventEmitter {
           this.store.appendEvent(mission.id, "planner.followup.action.rejected", { message: error.message, itemId: item.id }, { threadId });
         }
       }
-      this.store.addMessage({ missionId: mission.id, fromAgent: "Main Agent", toAgent: "You", topic: appendedTasks.length ? "mission.tasks.appended" : acceptsLatePlan ? "mission.plan" : "agent.reply", messageType: "response", text: responseText, deliveryStatus: "delivered", source: "codex", providerItemId: item.id });
+      this.store.addMessage({ missionId: mission.id, fromAgent: "Main Agent", toAgent: "You", topic: appendedTasks.length ? "mission.tasks.appended" : acceptsLatePlan ? "mission.plan" : "agent.reply", messageType: "response", text: responseText, deliveryStatus: "delivered", source: mission.runtimeMode === "agent_deck" ? "agent_deck_harness" : mission.provider || "codex", providerItemId: item.id });
       if (appendedTasks.length) await this.dispatchReady(mission.id);
     } else if (task) {
       await this.#handleTaskEvent(mission, task, event);
@@ -726,7 +756,7 @@ class MissionOrchestrator extends EventEmitter {
         this.store.updateMission(mission.id, { activeTurnId: null });
       }
     }
-    if (["turn/started", "turn/completed", "turn/plan/updated", "thread/tokenUsage/updated", "item/started", "item/completed", "item/execution/started", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/gitOperation/requestApproval", "item/approval/resolved"].includes(event.method)) {
+    if (["harness/event", "harness/phase", "turn/started", "turn/completed", "turn/plan/updated", "thread/tokenUsage/updated", "item/started", "item/completed", "item/execution/started", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/gitOperation/requestApproval", "item/approval/resolved"].includes(event.method)) {
       const providerPayload = event.id == null ? event.params : { requestId: event.id, ...event.params };
       this.store.appendEvent(mission.id, `provider.${event.method}`, compactLedgerValue(providerPayload), meta);
     }
@@ -756,15 +786,15 @@ class MissionOrchestrator extends EventEmitter {
         const latest = this.store.getTask(task.id);
         this.store.updateTask(task.id, { result, evidence, ...(["review", "completed"].includes(latest?.status) ? {} : { phase: "finishing" }) });
         if (["review", "completed"].includes(latest?.status)) this.store.updateLatestTaskArtifact(mission.id, task.id, { summary: result.summary || task.title });
-        this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "task.result", messageType: "response", text: result.summary || "Worker result submitted.", deliveryStatus: "delivered", source: "codex", providerItemId: item.id });
+        this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "task.result", messageType: "response", text: result.summary || "Worker result submitted.", deliveryStatus: "delivered", source: mission.runtimeMode === "agent_deck" ? "agent_deck_harness" : mission.provider || "codex", providerItemId: item.id });
       } catch {
         const plainText = String(item.text || "").trim();
         if (mission.spec?.runtime?.mode === "direct" && plainText) {
           const result = { summary: plainText, acceptance: [], changedFiles: [], blockers: [] };
           this.store.updateTask(task.id, { result, phase: "finishing" });
-          this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "task.result", messageType: "response", text: plainText, deliveryStatus: "delivered", source: "codex", providerItemId: item.id });
+          this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "task.result", messageType: "response", text: plainText, deliveryStatus: "delivered", source: mission.runtimeMode === "agent_deck" ? "agent_deck_harness" : mission.provider || "codex", providerItemId: item.id });
         } else {
-          this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "worker.message", messageType: "response", text: item.text || "Worker sent a response.", deliveryStatus: "delivered", source: "codex", providerItemId: item.id });
+          this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent: "Main Agent", topic: "worker.message", messageType: "response", text: item.text || "Worker sent a response.", deliveryStatus: "delivered", source: mission.runtimeMode === "agent_deck" ? "agent_deck_harness" : mission.provider || "codex", providerItemId: item.id });
         }
       }
     }
@@ -815,7 +845,7 @@ class MissionOrchestrator extends EventEmitter {
       if (tool === "send_message") {
         const target = mission.tasks.find((item) => item.key.toLowerCase() === String(args.to).toLowerCase() || item.agentRole.toLowerCase() === String(args.to).toLowerCase());
         const toAgent = target?.agentRole || (String(args.to).toLowerCase() === "main" ? "Main Agent" : String(args.to));
-        this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent, topic: String(args.topic), messageType: "request", text: String(args.message), deliveryStatus: target?.agentThreadId || toAgent === "Main Agent" ? "delivered" : "recorded", source: "codex" });
+        this.store.addMessage({ missionId: mission.id, fromAgent: task.agentRole, toAgent, topic: String(args.topic), messageType: "request", text: String(args.message), deliveryStatus: target?.agentThreadId || toAgent === "Main Agent" ? "delivered" : "recorded", source: mission.runtimeMode === "agent_deck" ? "agent_deck_harness" : mission.provider || "codex" });
         if (target?.agentThreadId) {
           if (target.activeTurnId && target.status === "running") await this.codex.steer({ threadId: target.agentThreadId, turnId: target.activeTurnId, prompt: `[Message from ${task.agentRole} · ${args.topic}] ${args.message}` });
           else await this.codex.injectItems(target.agentThreadId, `[Message from ${task.agentRole} · ${args.topic}] ${args.message}`);

@@ -282,6 +282,7 @@ class MissionStore {
     this.#ensureColumn("missions", "value_contract_json", "TEXT");
     this.#ensureColumn("missions", "execution_mode", "TEXT NOT NULL DEFAULT 'code'");
     this.#ensureColumn("missions", "execution_cwd", "TEXT");
+    this.#ensureColumn("missions", "runtime_mode", "TEXT NOT NULL DEFAULT 'external'");
     this.#ensureColumn("mission_events", "dedupe_key", "TEXT");
     this.#ensureColumn("artifacts", "dedupe_key", "TEXT");
     this.#ensureColumn("artifacts", "quality_score", "INTEGER");
@@ -296,20 +297,22 @@ class MissionStore {
 
   createMission(input) {
     if (input.executionMode && !["code", "research"].includes(input.executionMode)) throw new Error("Invalid execution mode");
+    if (input.runtimeMode && !["external", "agent_deck"].includes(input.runtimeMode)) throw new Error("Invalid runtime mode");
     const now = new Date().toISOString();
     const mission = {
       id: randomUUID(), title: input.title, outcome: input.outcome,
       sourcePrompt: input.sourcePrompt || input.outcome, cwd: input.cwd,
       provider: input.provider || "codex", model: input.model || null,
+      runtimeMode: input.runtimeMode || "external",
       valueContract: normalizeValueContract(input.valueContract),
       status: "planning", maxWorkers: Math.max(1, Math.min(8, input.maxWorkers || 4)),
       createdAt: now, updatedAt: now,
     };
     this.#exec(`INSERT INTO missions
-      (id,title,outcome,source_prompt,cwd,provider,model,status,max_workers,value_contract_json,created_at,updated_at)
-      VALUES (${quote(mission.id)},${quote(mission.title)},${quote(mission.outcome)},${quote(mission.sourcePrompt)},${quote(mission.cwd)},${quote(mission.provider)},${quote(mission.model)},${quote(mission.status)},${mission.maxWorkers},${json(mission.valueContract)},${quote(now)},${quote(now)});`);
+      (id,title,outcome,source_prompt,cwd,provider,runtime_mode,model,status,max_workers,value_contract_json,created_at,updated_at)
+      VALUES (${quote(mission.id)},${quote(mission.title)},${quote(mission.outcome)},${quote(mission.sourcePrompt)},${quote(mission.cwd)},${quote(mission.provider)},${quote(mission.runtimeMode)},${quote(mission.model)},${quote(mission.status)},${mission.maxWorkers},${json(mission.valueContract)},${quote(now)},${quote(now)});`);
     this.updateMission(mission.id, { executionMode: input.executionMode || "code" });
-    this.appendEvent(mission.id, "mission.created", { title: mission.title, provider: mission.provider, executionMode: input.executionMode || "code", valueScenario: mission.valueContract.scenario, tokenBudget: mission.valueContract.tokenBudget });
+    this.appendEvent(mission.id, "mission.created", { title: mission.title, provider: mission.provider, runtimeMode: mission.runtimeMode, executionMode: input.executionMode || "code", valueScenario: mission.valueContract.scenario, tokenBudget: mission.valueContract.tokenBudget });
     return this.getMission(mission.id);
   }
 
@@ -329,6 +332,7 @@ class MissionStore {
       integrationBranch: "integration_branch", integrationCommit: "integration_commit",
       valueContract: "value_contract_json",
       executionMode: "execution_mode", executionCwd: "execution_cwd",
+      runtimeMode: "runtime_mode",
     };
     const values = Object.entries(patch).filter(([key]) => columns[key]).map(([key, value]) => {
       return `${columns[key]}=${key === "spec" || key === "valueContract" ? json(key === "valueContract" ? normalizeValueContract(value) : value) : quote(value)}`;
@@ -1243,6 +1247,7 @@ class MissionStore {
     return {
       id: row.id, title: row.title, outcome: row.outcome, sourcePrompt: row.source_prompt, cwd: row.cwd,
       provider: row.provider, model: row.model, status: row.status, maxWorkers: row.max_workers,
+      runtimeMode: row.runtime_mode || "external",
       mainThreadId: row.main_thread_id, activeTurnId: row.active_turn_id,
       executionMode: row.execution_mode || "code", executionCwd: row.execution_cwd || null,
       spec: parseJson(row.spec_json, null), valueContract: normalizeValueContract(parseJson(row.value_contract_json, {})), error: row.error,

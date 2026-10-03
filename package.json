@@ -21,6 +21,8 @@
     "test:mission": "ELECTRON_RUN_AS_NODE=1 ../research/labs/grokbot-desktop/node_modules/.bin/electron --test tests/mission-core.test.mjs",
     "test:providers": "node --test tests/provider-registry.test.mjs",
     "test:adapters": "node --test tests/adapter-host.test.mjs",
+    "test:native-harness": "node --test tests/native-harness.test.mjs",
+    "harness:sync": "npm --prefix ../agent-deck-harness-core run build && node scripts/vendor-harness.mjs",
     "test:attention-policy": "node --test tests/attention-policy.test.mjs",
     "test:api-runtime": "node --test tests/api-agent-runtime.test.mjs",
     "test:mission:fallback": "node --test tests/mission-core.test.mjs",
