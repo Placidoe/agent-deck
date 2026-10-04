@@ -13,11 +13,20 @@ app.setPath("userData", sandbox);
 const db = path.join(sandbox, "snapshot.sqlite3");
 execFileSync("/usr/bin/sqlite3", ["-readonly", path.join(profile, "agent-deck.sqlite3"), `.backup '${db}'`]);
 const store = new MissionStore(db);
+let workspaceQaCandidate;
+// Explicitly labelled layout scenario in the disposable snapshot only.
+if (process.env.AGENT_DECK_WORKSPACE_QA) {
+  const candidate = store.listMissions().map(item => store.getMission(item.id)).find(item => item.spec && ["ready", "blocked"].includes(item.status) && item.tasks.every(task => !task.agentThreadId && !task.worktreePath));
+  if (!candidate) throw new Error("No unstarted real-ledger plan available for workspace layout QA");
+  workspaceQaCandidate = candidate;
+  store.updateMission(candidate.id, { executionMode: "auto", status: "ready", activeTurnId: null, error: null, spec: { ...candidate.spec, workspace: { strategy: "initialize_git", reason: "布局测试场景（不是模型输出）：工作区准备说明与逐项文件清单应保持清晰可读；原计划和账本来自只读副本。", trackedFiles: Array.from({ length: 20 }, (_, index) => `src/long-folder-name/component-${index}/representative-file-for-layout.js`) } } });
+}
 const artifacts = new ArtifactService({ store });
 const library = new LibraryService({ store, artifacts });
 const modelClient = process.env.AGENT_DECK_MODEL_QA ? new (require("../desktop/codex-app-server.cjs").CodexAppServer)() : null;
 if (process.env.AGENT_DECK_WORKFLOW_QA) store.library.createFolder({ name: "产品文档 · 只读测试", rootPath: fs.realpathSync(path.join(__dirname, "../docs")) });
 const workspace = JSON.parse(fs.readFileSync(path.join(profile, "workspace.json"), "utf8"));
+if (workspaceQaCandidate) workspace.path = workspaceQaCandidate.cwd;
 workspace.name = path.basename(workspace.path);
 const reads = {
   "workspace:current": () => workspace,

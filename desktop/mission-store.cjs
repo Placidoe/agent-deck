@@ -290,7 +290,7 @@ class MissionStore {
   }
 
   createMission(input) {
-    if (input.executionMode && !["code", "research"].includes(input.executionMode)) throw new Error("Invalid execution mode");
+    if (input.executionMode && !["auto", "code", "research"].includes(input.executionMode)) throw new Error("Invalid execution mode");
     if (input.runtimeMode && !["external", "agent_deck"].includes(input.runtimeMode)) throw new Error("Invalid runtime mode");
     const now = new Date().toISOString();
     const mission = {
@@ -682,7 +682,7 @@ class MissionStore {
 
   createRequirement(input) {
     const projectId = this.personal.assertProject(input.projectId, { active: true });
-    if (input.executionMode && !["code", "research"].includes(input.executionMode)) throw new Error("Invalid execution mode");
+    if (input.executionMode && !["auto", "code", "research"].includes(input.executionMode)) throw new Error("Invalid execution mode");
     const title = String(input.title || "").trim();
     const outcome = String(input.outcome || "").trim();
     const body = String(input.body || "").trim() || `需求：${title}`;
@@ -695,7 +695,7 @@ class MissionStore {
     const requirement = { id: randomUUID(), title, outcome, body, sourceType: input.sourceType || "local", sourceRef: input.sourceRef || null, workspacePath, priority, status, labels: Array.isArray(input.labels) ? input.labels.filter(Boolean).slice(0, 12) : [], acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria.filter(Boolean).slice(0, 20) : [], tokenBudget: normalizeTokenBudget(input.tokenBudget), createdAt: now, updatedAt: now };
     this.#exec(`INSERT INTO requirements (id,title,outcome,body,source_type,source_ref,workspace_path,priority,status,labels_json,acceptance_json,token_budget,created_at,updated_at)
       VALUES (${quote(requirement.id)},${quote(requirement.title)},${quote(requirement.outcome)},${quote(requirement.body)},${quote(requirement.sourceType)},${quote(requirement.sourceRef)},${quote(requirement.workspacePath)},${quote(requirement.priority)},${quote(requirement.status)},${json(requirement.labels)},${json(requirement.acceptanceCriteria)},${quote(requirement.tokenBudget)},${quote(now)},${quote(now)});`);
-    this.#exec(`UPDATE requirements SET execution_mode=${quote(input.executionMode || "code")},project_id=${quote(projectId)} WHERE id=${quote(requirement.id)};`);
+    this.#exec(`UPDATE requirements SET execution_mode=${quote(input.executionMode || "auto")},project_id=${quote(projectId)} WHERE id=${quote(requirement.id)};`);
     return this.getRequirement(requirement.id);
   }
 
@@ -727,7 +727,7 @@ class MissionStore {
     if (!["inbox", "clarifying", "archived"].includes(next.status) && (!next.outcome || !next.workspacePath)) throw new Error("Outcome and workspace are required before planning");
     if (!allowedStatuses.has(next.status)) throw new Error("Unknown requirement status");
     if (!allowedPriorities.has(next.priority)) throw new Error("Unknown requirement priority");
-    if (patch.executionMode !== undefined && !["code", "research"].includes(patch.executionMode)) throw new Error("Invalid execution mode");
+    if (patch.executionMode !== undefined && !["auto", "code", "research"].includes(patch.executionMode)) throw new Error("Invalid execution mode");
     if (patch.executionMode !== undefined && current.missionId) throw new Error("执行模式已锁定，请在执行计划中更换");
     const now = new Date().toISOString();
     this.#exec(`UPDATE requirements SET title=${quote(next.title)},outcome=${quote(next.outcome)},body=${quote(next.body)},source_type=${quote(next.sourceType)},source_ref=${quote(next.sourceRef)},workspace_path=${quote(next.workspacePath)},priority=${quote(next.priority)},status=${quote(next.status)},labels_json=${json(next.labels)},acceptance_json=${json(next.acceptanceCriteria)},token_budget=${quote(next.tokenBudget)},mission_id=${quote(next.missionId)},updated_at=${quote(now)} WHERE id=${quote(id)};`);

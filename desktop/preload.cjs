@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld("agentDeckDesktop", {
     approve: (missionId) => ipcRenderer.invoke("missions:approve", missionId),
     selectWorkspace: (missionId) => ipcRenderer.invoke("missions:select-workspace", missionId),
     setExecutionMode: (input) => ipcRenderer.invoke("missions:set-execution-mode", input),
+    assessWorkspace: (missionId) => ipcRenderer.invoke("missions:assess-workspace", missionId),
     resolveApproval: (input) => ipcRenderer.invoke("missions:resolve-approval", input),
     acceptTask: (input) => ipcRenderer.invoke("missions:accept-task", input),
     retryTask: (input) => ipcRenderer.invoke("missions:retry-task", input),

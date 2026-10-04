@@ -33,6 +33,11 @@ export function nextMissionAction(mission) {
     detail: "选择本地 Codex 模型列表中的型号后重试。原需求与失败记录会保留，计划仍需你确认。",
     primaryLabel: "选择模型并重试", secondaryLabel: "查看活动", panel: "spec",
   };
+  if (mission.spec?.workspacePending && mission.status === "blocked") return {
+    kind: "recovery", task: null, tone: "attention", icon: "blocked",
+    title: "工作区评估未完成，原任务已保留", detail: mission.error || "可以重新让 Agent 评估环境；尚未初始化目录或启动 Worker。",
+    primaryLabel: "查看准备方案", secondaryLabel: "查看活动", panel: "spec",
+  };
   for (const status of taskPriority) {
     const task = firstTask(mission, status);
     if (!task) continue;
@@ -45,7 +50,7 @@ export function nextMissionAction(mission) {
     if (status === "blocked" && isWorkspaceBlocker(task)) return {
       kind: "blocked", task, tone: "attention", icon: "blocked",
       title: "执行工作区尚未就绪，子 Agent 未启动",
-      detail: mission.executionMode === "research" ? `资料目录：${mission.cwd}。请检查目录是否仍可读取；成果在应用独立工作区中生成。` : `工作区：${mission.cwd}。代码开发需要有提交记录的 Git 项目。如果只是调研或写报告，请选择“改为调研与文档”，无需初始化此目录。保留现有计划，重新批准后继续。`,
+      detail: `工作区：${mission.cwd}。可以让 Agent 重新评估环境，选择复用 Git、独立成果目录或提出初始化方案；不需要你先区分文档和代码。已有拆解保留，初始化你的目录仍需明确确认。`,
       primaryLabel: "查看工作区问题", secondaryLabel: "查看证据", panel: "evidence",
     };
     if (status === "blocked") return {
@@ -64,14 +69,14 @@ export function nextMissionAction(mission) {
   if (mission.status === "ready") return {
     kind: "plan", task: null, tone: "attention", icon: "plan",
     title: "执行计划已准备好，尚未启动 Worker",
-    detail: `${mission.tasks?.length || 0} 个任务仍停留在计划阶段。${mission.executionMode === "research" ? "调研与文档模式：资料目录只作参考，成果在独立工作区生成。请确认计划不包含修改原项目的任务。" : "代码开发模式：确认需求和 DAG 后，才会创建真实 Thread 与 Worktree。"}`,
+    detail: `${mission.tasks?.length || 0} 个任务仍停留在计划阶段。${mission.spec?.workspace?.reason || "请检查计划和工作区准备方式；也可以让 Agent 重新评估环境。"}确认后才会创建真实 Thread 并启动执行。`,
     primaryLabel: "审阅计划", secondaryLabel: "编辑 DAG", panel: "spec",
   };
   if (mission.status === "ready_to_integrate") return {
     kind: "integration", task: null, tone: "review", icon: "integration",
-    title: mission.executionMode === "research" ? "所有任务已验收，可以汇总成果" : "所有任务已验收，可以审阅集成",
-    detail: mission.executionMode === "research" ? "检查各任务的报告与证据，确认后汇总到独立成果工作区，不写回资料目录。" : "检查最终结果、已验证证据和 Worktree 变更，再决定是否创建集成分支。",
-    primaryLabel: mission.executionMode === "research" ? "审阅成果汇总" : "审阅集成", secondaryLabel: "查看产物", panel: "result",
+    title: (mission.executionMode === "research" || mission.spec?.workspace?.strategy === "managed") ? "所有任务已验收，可以汇总成果" : "所有任务已验收，可以审阅集成",
+    detail: (mission.executionMode === "research" || mission.spec?.workspace?.strategy === "managed") ? "检查各任务的成果与证据，确认后汇总到独立成果工作区，不写回原目录。" : "检查最终结果、已验证证据和 Worktree 变更，再决定是否创建集成分支。",
+    primaryLabel: (mission.executionMode === "research" || mission.spec?.workspace?.strategy === "managed") ? "审阅成果汇总" : "审阅集成", secondaryLabel: "查看产物", panel: "result",
   };
   if (["integration_conflict", "failed"].includes(mission.status)) return {
     kind: "recovery", task: null, tone: "attention", icon: "blocked",

@@ -102,3 +102,8 @@ button.select-control,.product-shell button.select-control { display:flex; align
  .library-layout { grid-template-columns:200px minmax(0,1fr); }.library-table-heading,.library-file-row { grid-template-columns:minmax(150px,1fr) minmax(80px,.7fr) 96px; gap:10px; }.library-content-header,.library-table,.library-history { padding-left:20px; padding-right:20px; }.review-row-action { font-size:11px; }.enter-conversation span { display:none; }
 }
 @media(prefers-reduced-motion:reduce) { .select-control,.library-hub button { transition:none; } }
+.workspace-auto-hint { color: var(--text-secondary, #9aa3ad); font-size: 12px; line-height: 1.65; margin: 0; }
+.workspace-preparation { margin: 0 0 20px; padding: 16px 0; border-bottom: 1px solid var(--border, #30363d); min-width: 0; }
+.workspace-preparation h3 { margin: 0 0 8px; font-size: 14px; }
+.workspace-preparation p { margin: 6px 0; color: var(--text-secondary, #9aa3ad); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.workspace-preparation ul { max-height: 160px; overflow-y: auto; margin: 10px 0; padding-left: 20px; font-size: 12px; overflow-wrap: anywhere; }

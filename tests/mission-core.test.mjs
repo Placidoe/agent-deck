@@ -754,7 +754,7 @@ test("orchestrator turns a real provider plan into claimed worker threads and re
     commit() { return { commitHash: "a".repeat(40), files: [], diffStat: "", clean: true }; },
   };
   const orchestrator = new MissionOrchestrator({ codex, store, worktrees });
-  const created = await orchestrator.create({ title: "Real", outcome: "Ship", cwd: directory, maxWorkers: 2, orchestrationMode: "mission" });
+  const created = await orchestrator.create({ title: "Real", outcome: "Ship", cwd: directory, executionMode: "code", maxWorkers: 2, orchestrationMode: "mission" });
   await orchestrator.handleCodexEvent({ method: "item/completed", params: { threadId: created.mainThreadId, item: { id: "plan-item", type: "agentMessage", phase: "final_answer", text: JSON.stringify(validPlan) } } });
   const planned = store.getMission(created.id);
   assert.equal(planned.status, "ready");
@@ -804,6 +804,7 @@ test("adaptive direct mode skips the planner and auto-integrates after one human
     outcome: "Reject numeric strings such as 1.5 while preserving valid ISO dates",
     body: "Fix the parser and add focused regression tests.",
     workspacePath: repository,
+    executionMode: "code", // Preserve the legacy zero-planner routing contract.
     status: "ready_to_plan",
     tokenBudget: 14000,
   });
@@ -1129,7 +1130,7 @@ test("canceling a mission interrupts active turns and preserves completed eviden
   const store = new MissionStore(path.join(directory, "cancel.sqlite3"));
   const worktrees = { assertReady() { return { available: true }; }, create({ taskKey }) { const target = path.join(directory, taskKey); fs.mkdirSync(target); return { path: target, branch: `agentdeck/${taskKey}` }; } };
   const orchestrator = new MissionOrchestrator({ codex, store, worktrees });
-  const created = await orchestrator.create({ title: "Cancel", outcome: "Stop safely", cwd: directory, maxWorkers: 1, orchestrationMode: "mission" });
+  const created = await orchestrator.create({ title: "Cancel", outcome: "Stop safely", cwd: directory, executionMode: "code", maxWorkers: 1, orchestrationMode: "mission" });
   await orchestrator.handleCodexEvent({ method: "item/completed", params: { threadId: created.mainThreadId, item: { id: "plan", type: "agentMessage", text: JSON.stringify({ ...validPlan, tasks: [validPlan.tasks[0]] }) } } });
   await orchestrator.approve(created.id);
   const canceled = await orchestrator.cancel(created.id);

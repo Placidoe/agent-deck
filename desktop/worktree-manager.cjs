@@ -1,6 +1,9 @@
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
+const { createHash } = require("node:crypto");
+const { normalizeWorkspace } = require("./workspace-policy.cjs");
 const { decodeGitPath } = require("./path-utils.cjs");
 
 function runGit(args, cwd) {
@@ -75,8 +78,55 @@ class WorktreeManager {
     return fs.realpathSync(cwd);
   }
 
-  // Only bootstrap repositories under our own storage. Never git-init the
-  // user's source folder or import its contents into the output repository.
+  previewInitialization(cwd, trackedFiles) {
+    trackedFiles = normalizeWorkspace({ strategy: "initialize_git", reason: "Validate scope", trackedFiles }).trackedFiles;
+    const root = this.assertSourceDirectory(cwd);
+    const homeRelative = path.relative(root, os.homedir());
+    if ((!homeRelative || (!homeRelative.startsWith(`..${path.sep}`) && homeRelative !== ".." && !path.isAbsolute(homeRelative))) || [path.parse(root).root, "/System", "/Library", "/Applications", "/usr", "/var", "/private", ...["Desktop", "Documents", "Downloads", "Library"].map(name => path.join(os.homedir(), name))].includes(root)) throw new Error("请选择具体项目目录，不能初始化系统目录或个人父目录");
+    const repository = this.inspect(root);
+    if (repository.available) throw new Error("工作区已经有 Git 提交，请让 Agent 复用现有仓库");
+    if (repository.repositoryRoot && fs.realpathSync(repository.repositoryRoot) !== root) throw new Error("不能初始化父仓库内的子目录");
+    if (!["not_git_repository", "missing_git_head"].includes(repository.code)) throw new Error(repository.error);
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    if (entries.length > 2000 || entries.some(entry => entry.isDirectory() && entry.name !== ".git" && fs.existsSync(path.join(root, entry.name, ".git")))) throw new Error("目录中包含多个项目或文件过多，请选择具体项目，不会自动初始化父目录");
+    const files = []; let totalBytes = 0;
+    for (const file of trackedFiles) {
+      if (file.split("/").some(part => /^(\.git|\.env(?:\..*)?|\.ssh|\.aws|\.npmrc|\.netrc|node_modules|credentials?(?:\..*)?|secrets?(?:\..*)?)$/i.test(part)) || /(?:\.(?:pem|key|p12|pfx)|id_rsa|id_ed25519)$/i.test(file)) throw new Error(`不能自动纳入敏感文件：${file}`);
+      let cursor = root;
+      for (const part of file.split("/")) {
+        cursor = path.join(cursor, part);
+        if (fs.lstatSync(cursor).isSymbolicLink()) throw new Error(`不能纳入符号链接：${file}`);
+        if (cursor !== path.join(root, file) && fs.existsSync(path.join(cursor, ".git"))) throw new Error("不能纳入嵌套 Git 项目");
+      }
+      const stat = fs.statSync(cursor);
+      if (!stat.isFile() || stat.nlink !== 1 || stat.size > 2 * 1024 * 1024) throw new Error(`只能纳入不超过 2 MiB 的普通项目文件：${file}`);
+      totalBytes += stat.size;
+      if (totalBytes > 32 * 1024 * 1024) throw new Error("初始文件总量超过 32 MiB，请缩小项目范围");
+      const data = fs.readFileSync(cursor);
+      if (/-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}/.test(data.toString("utf8"))) throw new Error(`文件疑似包含密钥，不能自动提交：${file}`);
+      files.push({ path: file, bytes: data.length, sha256: createHash("sha256").update(data).digest("hex") });
+    }
+    if (repository.code === "missing_git_head" && runGit(["diff", "--cached", "--name-only"], root)) throw new Error("首次提交前已有暂存内容，请先自行检查；不会替你提交暂存区");
+    const gitPath = path.join(root, ".git");
+    if (fs.existsSync(gitPath) && (fs.lstatSync(gitPath).isSymbolicLink() || !fs.statSync(gitPath).isDirectory())) throw new Error("不能初始化链接或外部 Git 元数据");
+    const fingerprint = createHash("sha256").update(JSON.stringify({ root, code: repository.code, files })).digest("hex");
+    return { root, code: repository.code, files, totalBytes, fingerprint };
+  }
+
+  initializeApproved(preview) {
+    const current = this.previewInitialization(preview.root, preview.files.map(file => file.path));
+    if (current.fingerprint !== preview.fingerprint) throw new Error("工作区文件在确认期间发生了变化，请重新检查并批准");
+    const safe = ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "user.name=Agent Deck", "-c", "user.email=agent-deck@localhost"];
+    if (current.code === "not_git_repository") runGit([...safe, "-c", "init.templateDir=", "init", "-q"], current.root);
+    // Literal paths only. Never import unrelated files with add -A or add .
+    if (current.files.length) runGit([...safe, "--literal-pathspecs", "add", "--", ...current.files.map(file => file.path)], current.root);
+    const staged = runGitRaw(["diff", "--cached", "--name-only", "-z"], current.root).split("\0").filter(Boolean).sort();
+    if (JSON.stringify(staged) !== JSON.stringify(current.files.map(file => file.path).sort())) throw new Error("暂存区在准备期间发生变化，未提交；请检查 Git 状态后重试");
+    runGit([...safe, "commit", "--allow-empty", "-m", "Initialize approved Agent Deck project scope"], current.root);
+    return this.assertReady(current.root);
+  }
+
+  // Managed outputs bootstrap only app-owned storage, never the source folder.
   prepareResearch(missionId) {
     if (!/^[a-f0-9-]{36}$/i.test(missionId)) throw new Error("Invalid mission identity");
     const root = fs.realpathSync(this.rootDirectory);

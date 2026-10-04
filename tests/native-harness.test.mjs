@@ -129,7 +129,7 @@ test("native direct Mission preserves its contract on redirection and reaches an
   runtime.on("event", (event) => handling.push(orchestrator.handleCodexEvent(event)));
   try {
     const approval = wait(runtime, (event) => event.method === "item/fileChange/requestApproval");
-    const mission = await orchestrator.create({ title: "Create output", outcome: "Create result.txt", cwd: directory, orchestrationMode: "direct" });
+    const mission = await orchestrator.create({ title: "Create output", outcome: "Create result.txt", cwd: directory, executionMode: "code", orchestrationMode: "direct" });
     const first = await approval;
     await Promise.all(handling);
     const task = store.getMission(mission.id).tasks[0];

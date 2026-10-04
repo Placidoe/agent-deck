@@ -162,7 +162,7 @@ test("requirement planning carries project context through native runtime withou
   const runtime = { createThread: async () => ({ thread: { id: "native-project-planner" }, model: "test" }), sendTurn: async input => { calls.push(input); return { id: "native-turn" }; } };
   const orchestrator = new MissionOrchestrator({ store, codex: null, adapterHost: { runtimeFor: () => runtime }, selectRuntime: () => ({ runtimeMode: "agent_deck", provider: "deepseek" }), worktrees: {} });
   // Tests the real dispatch contract with an offline model transport, not real model quality.
-  const r = store.createRequirement({ title: "实现助手", outcome: "实现完整产品", body: "需要明确计划", workspacePath: "/test-only", projectId: p.id });
+  const r = store.createRequirement({ title: "实现助手", outcome: "实现完整产品", body: "需要明确计划", workspacePath: "/test-only", executionMode: "code", projectId: p.id });
   const result = await orchestrator.claimNextRequirement({ requirementId: r.id, orchestrationMode: "mission" });
   assert.equal(result.mission.projectId, p.id);
   assert.match(calls[0].prompt, /中文报告，不调用外部插件/);
@@ -177,7 +177,7 @@ test("workers and follow-up turns refresh scoped memory after correction and rev
   const first = memory(personal, { projectId: p.id, shareWithAgent: true, content: "初始语言偏好" });
   const runtime = { createThread: async () => ({ thread: { id: "personal-worker" }, model: "test" }), sendTurn: async input => { calls.push(input); return { id: `turn-${calls.length}` }; } };
   const orchestrator = new MissionOrchestrator({ store, codex: runtime, worktrees: { assertReady() {}, create() { return { path: dir, branch: "test-only" }; } } });
-  const m = await orchestrator.create({ title: "Fix parser", outcome: "修复函数并测试", cwd: dir, projectId: p.id, orchestrationMode: "direct" });
+  const m = await orchestrator.create({ title: "Fix parser", outcome: "修复函数并测试", cwd: dir, executionMode: "code", projectId: p.id, orchestrationMode: "direct" });
   assert.equal(m.tasks.length, 1); assert.match(calls[0].prompt, /初始语言偏好/);
   store.updateTask(m.tasks[0].id, { status: "review", activeTurnId: null });
   const revised = personal.saveMemory({ ...first, content: "更正后的偏好" });
@@ -195,7 +195,7 @@ test("unconfigured personal state adds no prompt overhead, but revocation sends 
   const { store, personal, dir } = fixture(t); const calls = [];
   const runtime = { createThread: async () => ({ thread: { id: "empty-personal" } }), sendTurn: async input => { calls.push(input); return { id: `t-${calls.length}` }; } };
   const orchestrator = new MissionOrchestrator({ store, codex: runtime, worktrees: {} });
-  const mission = await orchestrator.create({ title: "产品调研", outcome: "报告", cwd: dir, orchestrationMode: "mission" });
+  const mission = await orchestrator.create({ title: "产品调研", outcome: "报告", cwd: dir, executionMode: "code", orchestrationMode: "mission" });
   assert.doesNotMatch(calls[0].prompt, /agent_deck_personal_context/);
   const saved = memory(personal, { shareWithAgent: true });
   store.updateMission(mission.id, { activeTurnId: null });

@@ -301,12 +301,17 @@ ipcMain.handle("missions:select-workspace", async (_event, missionId) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
   const mission = missionOrchestrator.get(missionId);
   if (!mission) throw new Error("Mission not found");
-  const selection = await dialog.showOpenDialog(mainWindow, { title: mission.executionMode === "research" ? "选择资料目录（无需 Git）" : "选择具体 Git 项目（需有首次提交）", defaultPath: mission.cwd, properties: ["openDirectory"] });
+  const selection = await dialog.showOpenDialog(mainWindow, { title: "选择工作区（Agent 将判断环境准备方式）", defaultPath: mission.cwd, properties: ["openDirectory"] });
   if (selection.canceled || !selection.filePaths[0]) return null;
   const selectedPath = fs.realpathSync(selection.filePaths[0]);
-  const confirmation = await dialog.showMessageBox(mainWindow, { type: "question", title: "更换 Mission 工作区", message: "保留现有计划，更换执行目录？", detail: `原目录：${mission.cwd}\n新目录：${selectedPath}\n\n不会复制、提交或修改项目文件。计划将回到待批准状态，请重新检查任务范围与新工作区是否匹配。`, buttons: ["取消", "更换并重新审阅"], defaultId: 0, cancelId: 0 });
+  const confirmation = await dialog.showMessageBox(mainWindow, { type: "question", title: "更换 Mission 工作区", message: "保留现有拆解，让 Agent 评估新目录？", detail: `原目录：${mission.cwd}\n新目录：${selectedPath}\n\n将发起一次只读模型评估，不会复制、提交或修改项目文件。完成后请检查环境方案与现有任务范围，再批准执行。`, buttons: ["取消", "更换并评估"], defaultId: 0, cancelId: 0 });
   if (confirmation.response !== 1) return null;
-  return missionOrchestrator.changeWorkspace(missionId, selectedPath);
+  missionOrchestrator.changeWorkspace(missionId, selectedPath, "auto");
+  return missionOrchestrator.assessWorkspace(missionId);
+});
+ipcMain.handle("missions:assess-workspace", (_event, missionId) => {
+  if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
+  return missionOrchestrator.assessWorkspace(missionId);
 });
 ipcMain.handle("missions:set-execution-mode", async (_event, input) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
@@ -442,7 +447,16 @@ app.whenReady().then(() => {
   };
   adapterHost = new ProviderAdapterHost({ codex, apiRuntime, nativeHarness, onExternalEvent: forwardProviderEvent });
   const worktrees = new WorktreeManager(path.join(app.getPath("userData"), "worktrees"));
-  missionOrchestrator = new MissionOrchestrator({ codex, apiRuntime, adapterHost, selectRuntime: (input) => providerRegistry.selectRuntime(input), store: missionStore, worktrees });
+  missionOrchestrator = new MissionOrchestrator({ codex, apiRuntime, adapterHost, selectRuntime: (input) => providerRegistry.selectRuntime(input), store: missionStore, worktrees,
+    confirmWorkspaceInitialization: async preview => {
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: "question", title: "批准 Agent 的工作区准备方案", message: "在这个目录建立 Git 初始版本？",
+        detail: `目录：${preview.root}\nAgent 的理由：${preview.reason}\n\n仅提交以下 ${preview.files.length} 个文件（${Math.ceil(preview.totalBytes / 1024)} KiB）：\n${preview.files.map(file => file.path).join("\n") || "无已有文件，只创建空初始提交"}\n\n其他文件不纳入版本管理；不会推送到远端，也不会改写已有文件。完成后才会启动已批准的任务。`,
+        buttons: ["取消，保持未执行", "批准准备并执行"], defaultId: 0, cancelId: 0,
+      });
+      return result.response === 1;
+    },
+  });
   for (const runtime of [apiRuntime, nativeHarness]) runtime.on("event", (event) => {
     missionOrchestrator?.handleCodexEvent(event).catch((error) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("mission:error", { message: error.message });

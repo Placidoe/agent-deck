@@ -20,12 +20,16 @@ function classifyMissionRequest(input = {}) {
   if (text.length > 1800) { complexityScore += 2; reasons.push("long multi-constraint request"); }
   if ((text.match(/\n\s*(?:[-*]|\d+[.)])/g) || []).length >= 5) { complexityScore += 2; reasons.push("many independently stated deliverables"); }
   if (SIMPLE_DELIVERY_PATTERN.test(text)) { complexityScore -= 2; reasons.push("single coherent implementation intent"); }
-  const mode = requested === "adaptive" ? (complexityScore >= 3 ? "mission" : "direct") : requested;
+  const automaticWorkspace = input.executionMode === "auto";
+  // A new/ordinary folder needs a model-owned setup decision before execution.
+  // Keep bounded requests at one task, not a speculative multi-agent DAG.
+  const mode = automaticWorkspace ? "mission" : requested === "adaptive" ? (complexityScore >= 3 ? "mission" : "direct") : requested;
+  if (automaticWorkspace) reasons.unshift("Agent selects workspace preparation before approval");
   if (requested !== "adaptive") reasons.unshift(`user selected ${requested} strategy`);
   if (!reasons.length) reasons.push(mode === "direct" ? "bounded request with no proven coordination benefit" : "coordination benefit exceeds setup cost");
   const tier = mode === "direct" ? "direct" : complexityScore >= 7 ? "orchestrated" : "coordinated";
   const tokenBudget = Math.max(1000, Number(input.tokenBudget || 80000));
-  const routeTaskCap = mode === "direct" ? 1 : tier === "coordinated" ? 4 : 8;
+  const routeTaskCap = mode === "direct" || (automaticWorkspace && (requested === "direct" || (requested === "adaptive" && complexityScore < 3))) ? 1 : tier === "coordinated" ? 4 : 8;
   const maxTasks = Math.max(1, Math.min(routeTaskCap, Math.floor(tokenBudget / 500)));
   const routeWorkerCap = mode === "direct" ? 1 : tier === "coordinated" ? 3 : Math.max(2, Math.min(6, Number(input.maxWorkers || 4)));
   return {

@@ -32,6 +32,7 @@ class CodexAppServer extends EventEmitter {
     this.startPromise = null;
     this.loadedThreads = new Set();
     this.threadModels = new Map();
+    this.threadMutations = new Map();
     this.modelCatalog = null;
     this.modelCatalogPromise = null;
   }
@@ -88,6 +89,7 @@ class CodexAppServer extends EventEmitter {
     if (proc && !proc.killed) proc.kill("SIGTERM");
     this.loadedThreads.clear();
     this.threadModels.clear();
+    this.threadMutations.clear();
     this.modelCatalog = null;
   }
 
@@ -181,37 +183,39 @@ class CodexAppServer extends EventEmitter {
     return { ...created, turn };
   }
 
-  async createThread({ cwd, title, model, dynamicTools, ephemeral = false }) {
+  async createThread({ cwd, title, model, dynamicTools, ephemeral = false, allowMutations = true }) {
     await this.start();
     const selectedModel = await this.resolveModel(model);
     const started = await this.request("thread/start", {
       cwd,
       model: selectedModel,
       ...(ephemeral ? { ephemeral: true } : {}),
-      approvalPolicy: "on-request",
+      approvalPolicy: allowMutations ? "on-request" : "never",
       approvalsReviewer: "user",
-      sandbox: "workspace-write",
+      sandbox: allowMutations ? "workspace-write" : "read-only",
       serviceName: "agent_deck",
       ...(dynamicTools?.length ? { dynamicTools } : {}),
     });
     const threadId = started.thread.id;
     this.loadedThreads.add(threadId);
     this.threadModels.set(threadId, started.model || selectedModel);
+    this.threadMutations.set(threadId, allowMutations);
     if (title) await this.request("thread/name/set", { threadId, name: title }).catch(() => {});
     return { thread: { ...started.thread, name: title || started.thread.name }, model: started.model || selectedModel };
   }
 
-  async resumeThread(threadId, cwd) {
+  async resumeThread(threadId, cwd, allowMutations = this.threadMutations.get(threadId) ?? true) {
     await this.start();
     if (this.loadedThreads.has(threadId)) return null;
     const result = await this.request("thread/resume", {
       threadId,
       ...(cwd ? { cwd } : {}),
-      approvalPolicy: "on-request",
+      approvalPolicy: allowMutations ? "on-request" : "never",
       approvalsReviewer: "user",
-      sandbox: "workspace-write",
+      sandbox: allowMutations ? "workspace-write" : "read-only",
     });
     this.loadedThreads.add(threadId);
+    this.threadMutations.set(threadId, allowMutations);
     if (result.model) this.threadModels.set(threadId, result.model);
     return result.thread || result;
   }
@@ -227,20 +231,22 @@ class CodexAppServer extends EventEmitter {
     return this.request("thread/archive", { threadId });
   }
 
-  async sendTurn({ threadId, cwd, prompt, model, effort, outputSchema, additionalContext }) {
+  async sendTurn({ threadId, cwd, prompt, model, effort, outputSchema, additionalContext, allowMutations = this.threadMutations.get(threadId) ?? true }) {
     if (outputSchema) assertStrictOutputSchema(outputSchema);
-    await this.resumeThread(threadId, cwd);
+    await this.resumeThread(threadId, cwd, allowMutations);
     const selectedModel = await this.resolveModel(model || this.threadModels.get(threadId));
     const result = await this.request("turn/start", {
       threadId,
       ...(cwd ? { cwd } : {}),
       model: selectedModel,
+      ...(!allowMutations ? { approvalPolicy: "never", sandboxPolicy: { type: "readOnly" } } : {}),
       ...(effort ? { effort } : {}),
       ...(outputSchema ? { outputSchema } : {}),
       ...(additionalContext ? { additionalContext } : {}),
       input: [{ type: "text", text: prompt, text_elements: [] }],
     });
     this.threadModels.set(threadId, selectedModel);
+    this.threadMutations.set(threadId, allowMutations);
     return result.turn;
   }
 
@@ -330,6 +336,7 @@ class CodexAppServer extends EventEmitter {
     this.pending.clear();
     this.loadedThreads.clear();
     this.threadModels.clear();
+    this.threadMutations.clear();
     this.modelCatalog = null;
     this.emit("event", { method: "agentDeck/serverExit", params: { message: error.message } });
   }

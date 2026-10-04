@@ -36,7 +36,7 @@ function nextStep(requirement) {
 function RequirementComposer({ workspace, projects = [], projectId, onChooseWorkspace, onCreate, onStartPlan, creating, onClose }) {
   const [chosenProject, setChosenProject] = useState(projects.some(item => item.id === projectId && item.status === "active") ? projectId : "");
   const [title, setTitle] = useState(""); const [outcome, setOutcome] = useState(""); const [body, setBody] = useState("");
-  const [executionMode, setExecutionMode] = useState("code");
+  const executionMode = "auto";
   const [priority, setPriority] = useState("medium"); const [showMore, setShowMore] = useState(false); const [startNow, setStartNow] = useState(false);
   const [tokenBudget, setTokenBudget] = useState("80000");
   useEffect(() => {
@@ -54,7 +54,7 @@ function RequirementComposer({ workspace, projects = [], projectId, onChooseWork
     <form className="requirement-composer" onSubmit={submit} aria-label="新建工作">
       <header><div><span className="eyebrow">新建工作</span><h2>你想完成什么？</h2><p>先写清目标。主 Agent 会把它变成一份你可以确认的计划。</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="关闭"><X size={18} /></button></header>
       {!workspace ? <div className="workspace-notice"><Warning size={17} /><div><strong>还没有选择工作区</strong><span>请先在顶部选择一个本地项目。</span></div></div> : <div className="composer-workspace"><span>当前工作区</span><strong title={workspace.path}>{workspace.path}</strong><button type="button" onClick={onChooseWorkspace}>更换</button></div>}
-      <ExecutionModeField value={executionMode} onChange={setExecutionMode} />
+      <ExecutionModeField />
       <ProjectSelect projects={projects.filter(item => item.status === "active")} value={chosenProject} onChange={setChosenProject} label="所属个人项目（可选）" />
       <label>一句话描述要做的事 <b>必填</b><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：给产品加一个审批需求列表" /></label>
       <label>做到什么程度算完成？ <b>{startNow ? "必填" : "可以之后再补"}</b><input value={outcome} onChange={(event) => setOutcome(event.target.value)} placeholder="例如：能创建、筛选、确认审批需求，并有测试" /></label>
@@ -79,7 +79,7 @@ function DraftDetail({ requirement, workspace, onChooseWorkspace, onSave, onStar
   const [title, setTitle] = useState(requirement.title);
   const [outcome, setOutcome] = useState(requirement.outcome || "");
   const [body, setBody] = useState(requirement.body || "");
-  const [mode, setMode] = useState(requirement.executionMode || "research");
+  const mode = "auto";
   const [saving, setSaving] = useState(false);
   const save = async start => {
     if (saving || busy) return;
@@ -94,7 +94,7 @@ function DraftDetail({ requirement, workspace, onChooseWorkspace, onSave, onStar
     <label>任务名称<input value={title} onChange={e => setTitle(e.target.value)} maxLength={300} /></label>
     <label>完成标准<input value={outcome} onChange={e => setOutcome(e.target.value)} placeholder="例如：交付一份带来源的 HTML 方案，可离线阅读" /></label>
     <label>笔记与背景<textarea rows={6} value={body} onChange={e => setBody(e.target.value)} /></label>
-    <ExecutionModeField value={mode} onChange={setMode} />
+    <ExecutionModeField />
     <div className="draft-workspace"><span>工作区</span><strong title={workspace?.path || requirement.workspacePath}>{workspace?.name || requirement.workspacePath || "尚未选择"}</strong><button onClick={onChooseWorkspace}>选择文件夹</button></div>
     <footer><button disabled={saving || busy || !title.trim()} onClick={() => save(false)}>保存笔记</button><button className="primary-button" disabled={saving || busy || !title.trim() || !outcome.trim() || !(workspace?.path || requirement.workspacePath)} onClick={() => save(true)}><Play size={14} weight="fill" />{saving || busy ? "正在准备…" : "开始做 · 拆解计划"}</button></footer><small>先生成子任务和依赖，确认计划后才执行。保存笔记不消耗模型 Token。</small>
   </div></section>;
