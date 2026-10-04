@@ -3,6 +3,7 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { decodeGitPath } = require("./path-utils.cjs");
+const { PersonalStore } = require("./personal-store.cjs");
 const { assertMissionState, assertTaskState } = require("./mission-state.cjs");
 
 let BetterSqlite3 = null;
@@ -283,6 +284,7 @@ class MissionStore {
     this.#ensureColumn("missions", "execution_mode", "TEXT NOT NULL DEFAULT 'code'");
     this.#ensureColumn("missions", "execution_cwd", "TEXT");
     this.#ensureColumn("missions", "runtime_mode", "TEXT NOT NULL DEFAULT 'external'");
+    this.#ensureColumn("missions", "project_id", "TEXT");
     this.#ensureColumn("mission_events", "dedupe_key", "TEXT");
     this.#ensureColumn("artifacts", "dedupe_key", "TEXT");
     this.#ensureColumn("artifacts", "quality_score", "INTEGER");
@@ -291,8 +293,10 @@ class MissionStore {
     this.#ensureColumn("tasks", "value_json", "TEXT");
     this.#ensureColumn("requirements", "value_contract_json", "TEXT");
     this.#ensureColumn("requirements", "execution_mode", "TEXT NOT NULL DEFAULT 'code'");
+    this.#ensureColumn("requirements", "project_id", "TEXT");
     this.#exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedupe ON mission_events(mission_id,dedupe_key) WHERE dedupe_key IS NOT NULL;");
     this.#exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_dedupe ON artifacts(mission_id,dedupe_key) WHERE dedupe_key IS NOT NULL;");
+    this.personal = new PersonalStore({ all: sql => this.#all(sql), exec: sql => this.#exec(sql) });
   }
 
   createMission(input) {
@@ -304,13 +308,14 @@ class MissionStore {
       sourcePrompt: input.sourcePrompt || input.outcome, cwd: input.cwd,
       provider: input.provider || "codex", model: input.model || null,
       runtimeMode: input.runtimeMode || "external",
+      projectId: this.personal.assertProject(input.projectId, { active: true }),
       valueContract: normalizeValueContract(input.valueContract),
       status: "planning", maxWorkers: Math.max(1, Math.min(8, input.maxWorkers || 4)),
       createdAt: now, updatedAt: now,
     };
     this.#exec(`INSERT INTO missions
-      (id,title,outcome,source_prompt,cwd,provider,runtime_mode,model,status,max_workers,value_contract_json,created_at,updated_at)
-      VALUES (${quote(mission.id)},${quote(mission.title)},${quote(mission.outcome)},${quote(mission.sourcePrompt)},${quote(mission.cwd)},${quote(mission.provider)},${quote(mission.runtimeMode)},${quote(mission.model)},${quote(mission.status)},${mission.maxWorkers},${json(mission.valueContract)},${quote(now)},${quote(now)});`);
+      (id,title,outcome,source_prompt,cwd,provider,runtime_mode,model,status,max_workers,value_contract_json,created_at,updated_at,project_id)
+      VALUES (${quote(mission.id)},${quote(mission.title)},${quote(mission.outcome)},${quote(mission.sourcePrompt)},${quote(mission.cwd)},${quote(mission.provider)},${quote(mission.runtimeMode)},${quote(mission.model)},${quote(mission.status)},${mission.maxWorkers},${json(mission.valueContract)},${quote(now)},${quote(now)},${quote(mission.projectId)});`);
     this.updateMission(mission.id, { executionMode: input.executionMode || "code" });
     this.appendEvent(mission.id, "mission.created", { title: mission.title, provider: mission.provider, runtimeMode: mission.runtimeMode, executionMode: input.executionMode || "code", valueScenario: mission.valueContract.scenario, tokenBudget: mission.valueContract.tokenBudget });
     return this.getMission(mission.id);
@@ -723,6 +728,7 @@ class MissionStore {
   }
 
   createRequirement(input) {
+    const projectId = this.personal.assertProject(input.projectId, { active: true });
     if (input.executionMode && !["code", "research"].includes(input.executionMode)) throw new Error("Invalid execution mode");
     const title = String(input.title || "").trim();
     const outcome = String(input.outcome || "").trim();
@@ -735,7 +741,7 @@ class MissionStore {
     const requirement = { id: randomUUID(), title, outcome, body, sourceType: input.sourceType || "local", sourceRef: input.sourceRef || null, workspacePath, priority, status, labels: Array.isArray(input.labels) ? input.labels.filter(Boolean).slice(0, 12) : [], acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria.filter(Boolean).slice(0, 20) : [], valueContract: normalizeValueContract(input.valueContract), createdAt: now, updatedAt: now };
     this.#exec(`INSERT INTO requirements (id,title,outcome,body,source_type,source_ref,workspace_path,priority,status,labels_json,acceptance_json,value_contract_json,created_at,updated_at)
       VALUES (${quote(requirement.id)},${quote(requirement.title)},${quote(requirement.outcome)},${quote(requirement.body)},${quote(requirement.sourceType)},${quote(requirement.sourceRef)},${quote(requirement.workspacePath)},${quote(requirement.priority)},${quote(requirement.status)},${json(requirement.labels)},${json(requirement.acceptanceCriteria)},${json(requirement.valueContract)},${quote(now)},${quote(now)});`);
-    this.#exec(`UPDATE requirements SET execution_mode=${quote(input.executionMode || "code")} WHERE id=${quote(requirement.id)};`);
+    this.#exec(`UPDATE requirements SET execution_mode=${quote(input.executionMode || "code")},project_id=${quote(projectId)} WHERE id=${quote(requirement.id)};`);
     return this.getRequirement(requirement.id);
   }
 
@@ -774,7 +780,7 @@ class MissionStore {
   claimRequirement(id) {
     const current = this.getRequirement(id);
     if (!current) throw new Error("Requirement was not found");
-    if (!["inbox", "clarifying", "ready_to_plan"].includes(current.status)) throw new Error("Requirement is already linked to an active or completed Mission");
+    if (current.missionId || !["inbox", "clarifying", "ready_to_plan", "blocked"].includes(current.status)) throw new Error("Requirement is already linked to an active or completed Mission");
     return this.updateRequirement(id, { status: "planning" });
   }
 
@@ -1248,6 +1254,7 @@ class MissionStore {
       id: row.id, title: row.title, outcome: row.outcome, sourcePrompt: row.source_prompt, cwd: row.cwd,
       provider: row.provider, model: row.model, status: row.status, maxWorkers: row.max_workers,
       runtimeMode: row.runtime_mode || "external",
+      projectId: row.project_id || null,
       mainThreadId: row.main_thread_id, activeTurnId: row.active_turn_id,
       executionMode: row.execution_mode || "code", executionCwd: row.execution_cwd || null,
       spec: parseJson(row.spec_json, null), valueContract: normalizeValueContract(parseJson(row.value_contract_json, {})), error: row.error,
@@ -1259,6 +1266,7 @@ class MissionStore {
   #requirement(row) {
     return {
       id: row.id, title: row.title, outcome: row.outcome, body: row.body,
+      projectId: row.project_id || null,
       sourceType: row.source_type, sourceRef: row.source_ref, workspacePath: row.workspace_path,
       executionMode: row.execution_mode || "code",
       priority: row.priority, status: row.status, labels: parseJson(row.labels_json, []), acceptanceCriteria: parseJson(row.acceptance_json, []), valueContract: normalizeValueContract(parseJson(row.value_contract_json, {})),

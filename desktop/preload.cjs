@@ -2,6 +2,21 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("agentDeckDesktop", {
   isDesktop: true,
+  personal: {
+    projects: () => ipcRenderer.invoke("personal:projects"),
+    saveProject: input => ipcRenderer.invoke("personal:save-project", input),
+    memories: input => ipcRenderer.invoke("personal:memories", input),
+    saveMemory: input => ipcRenderer.invoke("personal:save-memory", input),
+    deleteMemory: input => ipcRenderer.invoke("personal:delete-memory", input),
+    linkWork: input => ipcRenderer.invoke("personal:link-work", input),
+    recovery: projectId => ipcRenderer.invoke("personal:recovery", projectId),
+    context: input => ipcRenderer.invoke("personal:context", input),
+    onChange: handler => {
+      const listener = () => handler();
+      ipcRenderer.on("personal:changed", listener);
+      return () => ipcRenderer.removeListener("personal:changed", listener);
+    },
+  },
   selectWorkspace: () => ipcRenderer.invoke("workspace:select"),
   currentWorkspace: () => ipcRenderer.invoke("workspace:current"),
   openWorkspaceFile: (file) => ipcRenderer.invoke("workspace:open-file", file),

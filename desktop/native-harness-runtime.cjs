@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
+const { stripPersonalContext } = require("./personal-context.cjs");
 const { ApiAgentRuntime, tools } = require("./api-agent-runtime.cjs");
 
 // Deliberately separate from legacy API turns: SDK owns the Manager/Executor/
@@ -65,7 +66,7 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
     await this.interrupt({ turnId });
     const active = this.turns.get(turnId);
     if (active?.done) await active.done;
-    return this.sendTurn({ threadId, prompt: previous?.prompt ? `${previous.prompt}\n\nUSER REDIRECTION (supersedes conflicting earlier instructions):\n${prompt}` : prompt, outputSchema: previous?.outputSchema });
+    return this.sendTurn({ threadId, prompt: previous?.prompt ? `${stripPersonalContext(previous.prompt)}\n\nUSER REDIRECTION (supersedes conflicting earlier instructions):\n${prompt}` : prompt, outputSchema: previous?.outputSchema });
   }
   async #drive(thread, turn, prompt, outputSchema) {
     const active = this.turns.get(turn.id);

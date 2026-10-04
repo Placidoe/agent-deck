@@ -240,6 +240,17 @@ ipcMain.handle("missions:defer-attention", (_event, input) => {
 });
 ipcMain.handle("missions:sessions", (_event, cwd) => missionOrchestrator?.sessions(cwd) || []);
 ipcMain.handle("requirements:list", (_event, input) => missionOrchestrator?.requirements(input || {}) || []);
+for (const [channel, method, mutation] of [
+  ["personal:projects", "listProjects"], ["personal:save-project", "saveProject", true],
+  ["personal:memories", "listMemories"], ["personal:save-memory", "saveMemory", true],
+  ["personal:delete-memory", "deleteMemory", true], ["personal:link-work", "linkWork", true],
+  ["personal:recovery", "recovery"], ["personal:context", "context"],
+]) ipcMain.handle(channel, (_event, input) => {
+  if (!missionStore?.personal) throw new Error("Personal workspace is not ready");
+  const result = missionStore.personal[method](input);
+  if (mutation) mainWindow?.webContents.send("personal:changed");
+  return result;
+});
 ipcMain.handle("requirements:create", (_event, input) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
   return missionOrchestrator.createRequirement(input || {});

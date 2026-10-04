@@ -1,4 +1,5 @@
 const { EventEmitter } = require("node:events");
+const { personalContextBlock } = require("./personal-context.cjs");
 const { HTML_REPORT_CONTRACT, REPORT_QUALITY_MINIMUM, assessPublishedReport, isReportContentType } = require("./html-report-quality.cjs");
 const {
   FAST_EXECUTION_CONTRACT,
@@ -278,6 +279,8 @@ class MissionOrchestrator extends EventEmitter {
         maxWorkers: input.maxWorkers || 4,
         valueContract: requirement.valueContract,
         executionMode: requirement.executionMode,
+        projectId: requirement.projectId,
+        orchestrationMode: input.orchestrationMode,
       });
       this.store.updateRequirement(requirement.id, { missionId: mission.id, status: "planning" });
       const linked = this.store.syncRequirementForMission(mission.id, mission.status) || this.store.getRequirement(requirement.id);
@@ -397,7 +400,7 @@ class MissionOrchestrator extends EventEmitter {
       const created = await runtime.createThread({ cwd, title: `Mission · ${input.title}`, model: input.model, provider: mission.provider, allowMutations: false });
       this.store.updateMission(mission.id, { mainThreadId: created.thread.id, model: created.model || input.model || null });
       this.store.appendEvent(mission.id, "planner.thread.created", { threadId: created.thread.id }, { threadId: created.thread.id });
-      const prompt = executionPolicy(mission) + missionPlanningPrompt(mission, adaptiveRoute);
+      const prompt = executionPolicy(mission) + this.#personalContext(mission, mission.outcome) + missionPlanningPrompt(mission, adaptiveRoute);
       const turn = await runtime.sendTurn({ threadId: created.thread.id, cwd, prompt, model: input.model, effort: route.effort, outputSchema: missionPlanSchema });
       this.store.updateMission(mission.id, { activeTurnId: turn.id });
       this.store.startRun({ missionId: mission.id, agentId: `${mission.id}:main`, threadId: created.thread.id, turnId: turn.id, phase: "planning", triggerType: "mission.create" });
@@ -462,7 +465,7 @@ class MissionOrchestrator extends EventEmitter {
             reductionPercent: contextKernel.stats.reductionPercent,
             included: contextKernel.stats.included, withheld: contextKernel.stats.withheld,
           }, { taskId: candidate.id, threadId: created.thread.id });
-          const prompt = executionPolicy(mission) + taskPrompt(mission, candidate, worktree, contextKernel, route);
+          const prompt = executionPolicy(mission) + this.#personalContext(mission, `${candidate.title} ${candidate.description}`, candidate.id) + taskPrompt(mission, candidate, worktree, contextKernel, route);
           const turn = await runtime.sendTurn({ threadId: created.thread.id, cwd: worktree.path, prompt, model: mission.model, effort: route.effort, ...(direct && mission.runtimeMode !== "agent_deck" ? {} : { outputSchema: taskResultSchema }) });
           this.store.updateTask(candidate.id, { activeTurnId: turn.id, phase: worktree.conflict ? "resolving_dependencies" : "working" });
           this.store.startRun({ missionId, taskId: candidate.id, agentId: `${missionId}:${candidate.key}`, threadId: created.thread.id, turnId: turn.id, phase: worktree.conflict ? "resolving_dependencies" : "working", triggerType: "scheduler.dispatch" });
@@ -574,6 +577,13 @@ class MissionOrchestrator extends EventEmitter {
     return result;
   }
 
+  #personalContext(mission, query, taskId = null) {
+    if (!this.store.personal) return "";
+    const context = this.store.personal.context({ projectId: mission.projectId, query, excludeMissionId: mission.id });
+    this.store.appendEvent(mission.id, "personal.context.selected", { projectId: mission.projectId, refs: context.items.map(item => item.ref), projectRevision: context.project?.revision, ...context.stats }, { taskId });
+    return personalContextBlock(context);
+  }
+
   async sendMessage({ missionId, taskId, text }) {
     const mission = this.store.getMission(missionId);
     if (!mission) throw new Error("Mission not found");
@@ -597,7 +607,7 @@ class MissionOrchestrator extends EventEmitter {
         const runtime = this.#runtime(latestMission);
         if (!taskId) {
           if (latestMission.activeTurnId) {
-            const turn = await runtime.steer({ threadId, turnId: latestMission.activeTurnId, prompt: message });
+            const turn = await runtime.steer({ threadId, turnId: latestMission.activeTurnId, prompt: this.#personalContext(latestMission, message) + message });
             if (latestMission.runtimeMode === "agent_deck") {
               this.store.updateMission(missionId, { activeTurnId: turn.id, status: latestMission.spec ? latestMission.status : "planning", error: null });
               this.store.startRun({ missionId, agentId: `${missionId}:main`, threadId, turnId: turn.id, phase: "planning", triggerType: "user.message" });
@@ -611,7 +621,7 @@ class MissionOrchestrator extends EventEmitter {
               const route = plannerPerformanceRoute();
               turn = await runtime.sendTurn({
                 threadId, cwd: this.#executionCwd(latestMission), model: latestMission.model,
-                prompt: executionPolicy(latestMission) + (retryPlanning ? `${missionPlanningPrompt(latestMission, classifyMissionRequest({ ...latestMission, orchestrationMode: "mission" }))}\n\nUSER RETRY INSTRUCTION\n${message}` : mainAgentFollowupPrompt(message)),
+                prompt: executionPolicy(latestMission) + this.#personalContext(latestMission, message) + (retryPlanning ? `${missionPlanningPrompt(latestMission, classifyMissionRequest({ ...latestMission, orchestrationMode: "mission" }))}\n\nUSER RETRY INSTRUCTION\n${message}` : mainAgentFollowupPrompt(message)),
                 effort: route.effort,
                 outputSchema: retryPlanning ? missionPlanSchema : mainAgentFollowupSchema,
               });
@@ -625,7 +635,7 @@ class MissionOrchestrator extends EventEmitter {
         } else {
           if (!latestTask?.agentThreadId) throw new Error("This worker no longer has a real provider thread");
           if (latestTask.activeTurnId && (latestTask.status === "running" || (latestMission.runtimeMode === "agent_deck" && latestTask.status === "waiting_approval"))) {
-            const turn = await runtime.steer({ threadId, turnId: latestTask.activeTurnId, prompt: message });
+            const turn = await runtime.steer({ threadId, turnId: latestTask.activeTurnId, prompt: this.#personalContext(latestMission, message, taskId) + message });
             if (latestMission.runtimeMode === "agent_deck") {
               this.store.updateTask(latestTask.id, { status: "running", phase: "working", activeTurnId: turn.id, error: null });
               this.store.startRun({ missionId, taskId: latestTask.id, agentId: `${missionId}:${latestTask.key}`, threadId, turnId: turn.id, phase: "working", triggerType: "user.message" });
@@ -635,7 +645,7 @@ class MissionOrchestrator extends EventEmitter {
           else {
             const route = workerPerformanceRoute(latestTask, { direct: latestMission.spec?.runtime?.mode === "direct" });
             const artifactContract = route.reportTask ? HTML_FIRST_DELIVERABLE : NATIVE_ARTIFACT_CONTRACT;
-            const turn = await runtime.sendTurn({ threadId, cwd: latestTask.worktreePath, prompt: `${executionPolicy(latestMission)}${message}\n\n${FAST_EXECUTION_CONTRACT}\n\n${artifactContract}`, effort: route.effort, outputSchema: taskResultSchema });
+            const turn = await runtime.sendTurn({ threadId, cwd: latestTask.worktreePath, prompt: `${executionPolicy(latestMission)}${this.#personalContext(latestMission, message, taskId)}${message}\n\n${FAST_EXECUTION_CONTRACT}\n\n${artifactContract}`, effort: route.effort, outputSchema: taskResultSchema });
             this.store.updateTask(latestTask.id, { status: "running", phase: "working", activeTurnId: turn.id, error: null });
             this.store.startRun({ missionId, taskId: latestTask.id, agentId: `${missionId}:${latestTask.key}`, threadId, turnId: turn.id, phase: "working", triggerType: "user.message" });
             this.store.updateMission(missionId, { status: "running", error: null });
