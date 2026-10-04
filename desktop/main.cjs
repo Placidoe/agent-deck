@@ -333,6 +333,14 @@ ipcMain.handle("missions:retry-task", (_event, input) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
   return missionOrchestrator.retryTask(input.missionId, input.taskId);
 });
+ipcMain.handle("missions:planner-models", (_event, missionId) => {
+  if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
+  return missionOrchestrator.plannerModels(missionId);
+});
+ipcMain.handle("missions:retry-plan", (_event, input) => {
+  if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
+  return missionOrchestrator.retryPlan(input || {});
+});
 ipcMain.handle("missions:integrate", (_event, missionId) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
   return missionOrchestrator.integrate(missionId);

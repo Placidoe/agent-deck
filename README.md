@@ -40,6 +40,10 @@ flowchart LR
 
 流程回归：`node scripts/workflow-qa.mjs` 使用隔离的真实账本副本验证两种桌面尺寸，不启动执行器；截图保存在 `qa/workflow/`。
 
+外部 Codex 新会话会显式使用本地 `model/list` 的默认型号，不继承全局 `~/.codex/config.toml` 中的模型设置。模型列表只是候选目录，不是账号权限保证。若计划生成前因模型配置失败，可在原任务的恢复栏刷新、选择模型并重新生成计划；保留失败历史，不自动批准或启动 Worker，也不修改全局配置。内部 Harness 与已启动任务不走这个换模型入口。
+
+模型回归：`tests/codex-model-selection.test.mjs` 覆盖默认值、分页缓存、拒绝不兼容模型、重试与取消边界；`node scripts/smoke-codex-model.cjs` 会消耗一次很小的真实 Codex 请求，在临时会话中验证默认型号，不运行工具、不重跑你的任务。
+
 ## 界面演示
 
 Mission 画布把 Main Agent、依赖任务、证据、人工验收与集成决策放在同一个可追溯的工作区。

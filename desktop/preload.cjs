@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld("agentDeckDesktop", {
     resolveApproval: (input) => ipcRenderer.invoke("missions:resolve-approval", input),
     acceptTask: (input) => ipcRenderer.invoke("missions:accept-task", input),
     retryTask: (input) => ipcRenderer.invoke("missions:retry-task", input),
+    plannerModels: (missionId) => ipcRenderer.invoke("missions:planner-models", missionId),
+    retryPlan: (input) => ipcRenderer.invoke("missions:retry-plan", input),
     integrate: (missionId) => ipcRenderer.invoke("missions:integrate", missionId),
     sendMessage: (input) => ipcRenderer.invoke("missions:send-message", input),
     cancel: (missionId) => ipcRenderer.invoke("missions:cancel", missionId),

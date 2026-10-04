@@ -31,6 +31,9 @@ class CodexAppServer extends EventEmitter {
     this.pending = new Map();
     this.startPromise = null;
     this.loadedThreads = new Set();
+    this.threadModels = new Map();
+    this.modelCatalog = null;
+    this.modelCatalogPromise = null;
   }
 
   async start() {
@@ -84,6 +87,8 @@ class CodexAppServer extends EventEmitter {
     this.proc = null;
     if (proc && !proc.killed) proc.kill("SIGTERM");
     this.loadedThreads.clear();
+    this.threadModels.clear();
+    this.modelCatalog = null;
   }
 
   notify(method, params) {
@@ -107,7 +112,7 @@ class CodexAppServer extends EventEmitter {
     await this.start();
     const [accountResult, modelsResult] = await Promise.all([
       this.request("account/read", { refreshToken: false }),
-      this.request("model/list", { limit: 30, includeHidden: false }).catch(() => ({ data: [] })),
+      this.listModels({ refresh: true }),
     ]);
     const version = spawnSync(this.binary, ["--version"], { encoding: "utf8" }).stdout?.trim() || "Codex";
     return {
@@ -116,8 +121,46 @@ class CodexAppServer extends EventEmitter {
       account: accountResult.account,
       requiresOpenaiAuth: accountResult.requiresOpenaiAuth,
       version,
-      models: modelsResult.data || [],
+      models: modelsResult,
     };
+  }
+
+  async listModels({ refresh = false } = {}) {
+    await this.start();
+    if (!refresh && this.modelCatalog && Date.now() - this.modelCatalog.at < 30000) return this.modelCatalog.models;
+    if (this.modelCatalogPromise) return this.modelCatalogPromise;
+    this.modelCatalogPromise = (async () => {
+      const models = [];
+      const cursors = new Set();
+      let cursor;
+      for (let page = 0; page < 20; page += 1) {
+        const result = await this.request("model/list", { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) });
+        if (!Array.isArray(result.data)) throw new Error("CODEX_MODEL_CATALOG_UNAVAILABLE: 无法读取 Codex 模型列表；请刷新连接后重试。");
+        for (const model of result.data) if (!model.hidden && typeof (model.model || model.id) === "string") models.push(model);
+        if (!result.nextCursor) {
+          this.modelCatalog = { at: Date.now(), models };
+          return models;
+        }
+        if (cursors.has(result.nextCursor)) break;
+        cursor = result.nextCursor;
+        cursors.add(cursor);
+      }
+      throw new Error("CODEX_MODEL_CATALOG_UNAVAILABLE: Codex 模型列表分页异常，请刷新连接。");
+    })();
+    try { return await this.modelCatalogPromise; }
+    finally { this.modelCatalogPromise = null; }
+  }
+
+  async resolveModel(requested, options) {
+    const models = await this.listModels(options);
+    const model = String(requested || "").trim();
+    const selected = model
+      ? models.find(item => (item.model || item.id) === model)
+      : models.find(item => item.isDefault) || models[0];
+    if (!selected) throw new Error(model
+      ? `CODEX_MODEL_NOT_LISTED: 模型 '${model}' 不在本地 Codex 模型列表中。请刷新模型列表并明确选择；不会自动换模型。`
+      : "CODEX_MODEL_CATALOG_UNAVAILABLE: Codex 未返回可选模型；不会继承全局模型配置，请检查登录与连接。");
+    return selected.model || selected.id;
   }
 
   async listThreads(cwd) {
@@ -138,11 +181,13 @@ class CodexAppServer extends EventEmitter {
     return { ...created, turn };
   }
 
-  async createThread({ cwd, title, model, dynamicTools }) {
+  async createThread({ cwd, title, model, dynamicTools, ephemeral = false }) {
     await this.start();
+    const selectedModel = await this.resolveModel(model);
     const started = await this.request("thread/start", {
       cwd,
-      ...(model ? { model } : {}),
+      model: selectedModel,
+      ...(ephemeral ? { ephemeral: true } : {}),
       approvalPolicy: "on-request",
       approvalsReviewer: "user",
       sandbox: "workspace-write",
@@ -151,8 +196,9 @@ class CodexAppServer extends EventEmitter {
     });
     const threadId = started.thread.id;
     this.loadedThreads.add(threadId);
+    this.threadModels.set(threadId, started.model || selectedModel);
     if (title) await this.request("thread/name/set", { threadId, name: title }).catch(() => {});
-    return { thread: { ...started.thread, name: title || started.thread.name }, model: started.model };
+    return { thread: { ...started.thread, name: title || started.thread.name }, model: started.model || selectedModel };
   }
 
   async resumeThread(threadId, cwd) {
@@ -166,6 +212,7 @@ class CodexAppServer extends EventEmitter {
       sandbox: "workspace-write",
     });
     this.loadedThreads.add(threadId);
+    if (result.model) this.threadModels.set(threadId, result.model);
     return result.thread || result;
   }
 
@@ -183,15 +230,17 @@ class CodexAppServer extends EventEmitter {
   async sendTurn({ threadId, cwd, prompt, model, effort, outputSchema, additionalContext }) {
     if (outputSchema) assertStrictOutputSchema(outputSchema);
     await this.resumeThread(threadId, cwd);
+    const selectedModel = await this.resolveModel(model || this.threadModels.get(threadId));
     const result = await this.request("turn/start", {
       threadId,
       ...(cwd ? { cwd } : {}),
-      ...(model ? { model } : {}),
+      model: selectedModel,
       ...(effort ? { effort } : {}),
       ...(outputSchema ? { outputSchema } : {}),
       ...(additionalContext ? { additionalContext } : {}),
       input: [{ type: "text", text: prompt, text_elements: [] }],
     });
+    this.threadModels.set(threadId, selectedModel);
     return result.turn;
   }
 
@@ -280,6 +329,8 @@ class CodexAppServer extends EventEmitter {
     }
     this.pending.clear();
     this.loadedThreads.clear();
+    this.threadModels.clear();
+    this.modelCatalog = null;
     this.emit("event", { method: "agentDeck/serverExit", params: { message: error.message } });
   }
 }

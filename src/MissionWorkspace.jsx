@@ -17,7 +17,7 @@ import { ApprovalActionPanel } from "./ApprovalActionPanel";
 import { reviewGate, reviewGateGuidance } from "./review-gate.js";
 import { autoLayoutMission, criticalMissionPath, dependencyImpact, missionPath, planImpact, validateMissionDag } from "./mission-graph";
 import { conversationFromThread } from "./mission-conversation";
-import { canChangeMissionWorkspace, isWorkspaceBlocker, nextMissionAction } from "./mission-next-action";
+import { canChangeMissionWorkspace, canRetryCodexPlan, isCodexModelFailure, isWorkspaceBlocker, nextMissionAction } from "./mission-next-action";
 import "./mission.css";
 import "./workspace-design.css";
 
@@ -206,8 +206,9 @@ function SpecList({ label, items = [], checks = false }) {
   return <article className="spec-card"><label>{label}</label><ul className={checks ? "checks" : ""}>{items.map((item) => <li key={item}>{checks && <Clock size={13} />}{item}</li>)}</ul></article>;
 }
 
-function SpecView({ mission, onApprove, onRetryPlan, busy }) {
+function SpecView({ desktop, mission, onApprove, onRetryPlan, onCodexRetry, busy }) {
   const spec = mission.spec;
+  if (canRetryCodexPlan(mission)) return <CodexPlanRecovery key={mission.id} desktop={desktop} mission={mission} busy={busy} onRetry={onCodexRetry} />;
   if (mission.status === "planning") return <section className="mission-empty"><Sparkle size={30} weight="duotone" /><h2>Main Agent 正在生成真实需求表单</h2><p>Planner Thread：{mission.mainThreadId || "正在创建"}</p><small>状态只由 Codex Turn 事件更新。</small></section>;
   if (!spec) return <section className="mission-empty"><Warning size={30} /><h2>需求表单生成失败</h2><p>{/invalid_json_schema|Invalid structured output schema/.test(mission.error || "") ? "生成计划的输出结构不符合模型要求。更新到修复版后，可以在原会话重新生成；确认计划前不会启动子任务。" : mission.error || "No structured plan was persisted."}</p>{mission.status === "failed" && mission.mainThreadId && !mission.tasks.length && <button className="primary-button" disabled={busy} onClick={onRetryPlan}><ArrowsClockwise size={16} />{busy ? "正在提交…" : "重新生成计划"}</button>}<details><summary>技术详情</summary><p>{mission.error}</p></details></section>;
   const runtime = spec.runtime || {};
@@ -282,7 +283,35 @@ function ContextKernelView({ desktop, mission, task }) {
   </section>;
 }
 
-function MissionDecisionDock({ mission, onOpen, onSecondary, onApprove, onWorkspace, onMode, busy }) {
+function CodexPlanRecovery({ desktop, mission, onRetry, busy }) {
+  const [models, setModels] = useState([]);
+  const [model, setModel] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let disposed = false;
+    setLoading(true); setCatalogError(""); setModel("");
+    desktop.missions.plannerModels(mission.id).then(items => {
+      if (disposed) return;
+      setModels(items);
+      const selected = items.find(item => item.isDefault) || items[0];
+      setModel(selected?.model || selected?.id || "");
+    }).catch(error => { if (!disposed) { setModels([]); setCatalogError(error.message); } })
+      .finally(() => { if (!disposed) setLoading(false); });
+    return () => { disposed = true; };
+  }, [desktop, mission.id, revision]);
+  return <section className="codex-plan-recovery" aria-label="Codex 模型恢复">
+    <header><Warning size={18} /><div><strong>{isCodexModelFailure(mission.error) ? "模型配置不兼容，计划尚未开始" : "重新生成执行计划"}</strong><p>保留原需求与历史记录。只重新生成计划，确认后才会启动子任务。</p></div></header>
+    <div className="codex-plan-recovery-controls"><label>重试模型<SelectControl value={model} disabled={loading || busy || !models.length} onChange={event => setModel(event.target.value)}>{models.length ? models.map(item => <option key={item.model || item.id} value={item.model || item.id}>{item.displayName || item.model || item.id}{item.isDefault ? " · Codex 默认" : ""}</option>) : <option value="">{loading ? "正在读取模型列表…" : "暂无可选模型"}</option>}</SelectControl></label><button type="button" className="tool-button" disabled={loading || busy} onClick={() => setRevision(value => value + 1)}>刷新模型</button><button type="button" className="primary-button" disabled={loading || busy || !model} onClick={() => onRetry(model)}><ArrowsClockwise size={14} />{busy ? "正在提交…" : "使用此模型重新生成计划"}</button></div>
+    <small>列表来自本地 Codex；不代表账号权限已验证。不修改全局配置，也不会自动换模型重试。</small>
+    {catalogError && <p role="alert">{catalogError}</p>}
+    <details><summary>查看原始错误{mission.model ? ` · ${mission.model}` : ""}</summary><pre>{mission.error}</pre></details>
+  </section>;
+}
+
+function MissionDecisionDock({ desktop, mission, onRetryPlan, onOpen, onSecondary, onApprove, onWorkspace, onMode, busy }) {
+  if (canRetryCodexPlan(mission)) return <CodexPlanRecovery key={mission.id} desktop={desktop} mission={mission} busy={busy} onRetry={onRetryPlan} />;
   const action = nextMissionAction(mission);
   if (!action) return null;
   const Icon = action.icon === "plan" ? ListChecks : action.icon === "review" ? ShieldCheck : action.icon === "integration" ? GitBranch : Warning;
@@ -733,6 +762,15 @@ export function MissionWorkspace({ desktop, workspace, codexStatus, onChooseWork
     });
   }
 
+  function retryPlan(model) {
+    perform(async () => {
+      const result = await desktop.missions.retryPlan({ missionId: mission.id, model });
+      setSelectedTaskId(null); setInspectorPanel("brief"); setTab("spec");
+      setNotice(`已使用 ${result.model} 提交计划重试；子任务须等你确认计划后才会启动。`);
+      return result;
+    });
+  }
+
   async function sendMessage(event) {
     event.preventDefault();
     const text = draft.trim();
@@ -771,7 +809,7 @@ export function MissionWorkspace({ desktop, workspace, codexStatus, onChooseWork
       {notice && <div className="runtime-notice"><CheckCircle size={15} />{notice}<button onClick={() => setNotice("")}><X size={14} /></button></div>}
       {!selectedMissionId ? <div className="mission-empty full"><Database size={38} weight="duotone" /><h2>No real mission exists yet</h2><p>Create one with Codex or a verified API Harness. Nothing will be simulated.</p><button className="primary-button" onClick={() => canCreate ? setShowNewMission(true) : setError(workspace ? "Connect Codex or verify an API provider in Settings first." : "Choose a workspace first.")}><Plus size={15} />New real mission</button></div> : !visibleMission ? <div className="mission-empty full"><Database size={32} weight="duotone" /><h2>Loading mission evidence…</h2><p>Reading the selected mission from the local SQLite ledger.</p></div> : <div className={`mission-body ${inspectorFocused ? "inspector-focused" : ""}`} style={{ "--inspector-width": `${inspectorWidth}px` }}>
         <main className="mission-center">{tab === "graph" && <section className={`graph-canvas ${nextMissionAction(visibleMission) && !planEditing ? "has-decision" : ""}`}>
-          {!planEditing && <MissionDecisionDock mission={visibleMission} busy={busy} onMode={() => perform(async () => { const updated = await desktop.missions.setExecutionMode({ missionId: visibleMission.id, executionMode: visibleMission.executionMode === "research" ? "code" : "research" }); if (updated) { setSelectedTaskId(null); setInspectorPanel("brief"); setTab("spec"); setNotice("执行方式已更换，未启动 Worker。请重新审阅计划并批准。"); } return updated; })} onWorkspace={() => perform(async () => { const updated = await desktop.missions.selectWorkspace(visibleMission.id); if (updated) { setSelectedTaskId(null); setInspectorPanel("brief"); setNotice(`工作区已更换为 ${updated.cwd}。请重新审阅计划后批准运行。`); } return updated; })} onOpen={(action) => { if (action.task) selectTask(action.task.id); else setSelectedTaskId(null); setInspectorPanel(action.panel); if (action.kind === "plan") setTab("spec"); else setTab("graph"); }} onSecondary={(action) => { if (action.kind === "plan") beginPlanEdit(); else if (action.kind === "blocked") { selectTask(action.task.id); setInspectorPanel("evidence"); } else if (action.kind === "integration") setTab("artifacts"); else if (action.kind === "recovery") setTab("activity"); else if (action.task) { selectTask(action.task.id); setInspectorPanel("conversation"); } }} onApprove={() => perform(() => desktop.missions.approve(visibleMission.id))} />}
+          {!planEditing && <MissionDecisionDock desktop={desktop} onRetryPlan={retryPlan} mission={visibleMission} busy={busy} onMode={() => perform(async () => { const updated = await desktop.missions.setExecutionMode({ missionId: visibleMission.id, executionMode: visibleMission.executionMode === "research" ? "code" : "research" }); if (updated) { setSelectedTaskId(null); setInspectorPanel("brief"); setTab("spec"); setNotice("执行方式已更换，未启动 Worker。请重新审阅计划并批准。"); } return updated; })} onWorkspace={() => perform(async () => { const updated = await desktop.missions.selectWorkspace(visibleMission.id); if (updated) { setSelectedTaskId(null); setInspectorPanel("brief"); setNotice(`工作区已更换为 ${updated.cwd}。请重新审阅计划后批准运行。`); } return updated; })} onOpen={(action) => { if (action.task) selectTask(action.task.id); else setSelectedTaskId(null); setInspectorPanel(action.panel); if (action.kind === "plan") setTab("spec"); else setTab("graph"); }} onSecondary={(action) => { if (action.kind === "plan") beginPlanEdit(); else if (action.kind === "blocked") { selectTask(action.task.id); setInspectorPanel("evidence"); } else if (action.kind === "integration") setTab("artifacts"); else if (action.kind === "recovery") setTab("activity"); else if (action.task) { selectTask(action.task.id); setInspectorPanel("conversation"); } }} onApprove={() => perform(() => desktop.missions.approve(visibleMission.id))} />}
           <div className="graph-toolbar" data-testid="graph-toolbar"><label>布局<SelectControl value={layoutMode} onChange={(event) => applyLayout(event.target.value)}><option value="horizontal">从左到右</option><option value="vertical">从上到下</option><option value="compact">紧凑</option></SelectControl></label><label>连线<SelectControl value={edgeFilter} onChange={(event) => setEdgeFilter(event.target.value)}><option value="all">全部</option><option value="dependencies">仅依赖</option><option value="assignments">仅分配</option></SelectControl></label><button type="button" className={`critical-path-toggle ${showCriticalPath ? "active" : ""}`} title="Highlight the longest dependency chain; this is not a duration forecast." onClick={() => setShowCriticalPath((value) => !value)}>关键路径</button>{selectedNodeCount > 1 && <span>已选 {selectedNodeCount}</span>}{visibleMission.status === "ready" && <button type="button" className={`edit-toggle ${planEditing ? "active" : ""}`} onClick={planEditing ? () => { setPlanEditing(false); setPlanDraft(null); setSelectedDraftKey(null); } : beginPlanEdit}>{planEditing ? "完成编辑" : "编辑计划"}</button>}</div>
           <div className="graph-viewport">
           {(selectedTaskKey || selectedDraftKey) && <section className="graph-impact-card" data-testid="graph-impact-card"><span className="eyebrow">DEPENDENCY IMPACT</span><strong>{selectedTaskKey || selectedDraftKey}</strong><div><span>Upstream <b>{graph.impact.upstream.length}</b></span><span>Downstream <b>{graph.impact.downstream.length}</b></span><span className={graph.impact.pendingDownstream.length ? "pending" : ""}>Still waiting <b>{graph.impact.pendingDownstream.length}</b></span></div><small>选中路径已高亮；“Still waiting”只统计未完成的真实下游任务。</small></section>}
@@ -780,7 +818,7 @@ export function MissionWorkspace({ desktop, workspace, codexStatus, onChooseWork
           </ReactFlow>
           {planEditing && <PlanEditor mission={visibleMission} draft={planDraft} setDraft={setPlanDraft} selectedKey={selectedDraftKey} setSelectedKey={setSelectedDraftKey} onSave={savePlan} onClose={() => { setPlanEditing(false); setPlanDraft(null); setSelectedDraftKey(null); }} busy={busy} />}
           </div>
-        </section>}{tab === "tasks" && <TaskTable tasks={visibleMission.tasks} onSelectTask={(id) => { selectTask(id); setTab("graph"); }} />}{tab === "context" && <ContextKernelView desktop={desktop} mission={visibleMission} task={selectedTask} />}{tab === "bus" && <MessageBus messages={visibleMission.messages} />}{tab === "activity" && <ActivityView events={visibleMission.events} onLoadMore={loadOlderEvents} hasMore={hasMoreEvents} busy={busy} />}{tab === "artifacts" && <ArtifactView mission={visibleMission} onAction={artifactAction} onPublish={(artifact, file) => setPublicationTarget({ artifact, file })} onExportReport={exportReport} busy={busy} />}{tab === "spec" && <SpecView mission={visibleMission} busy={busy} onRetryPlan={() => perform(() => desktop.missions.sendMessage({ missionId: visibleMission.id, text: "请根据原始需求重新生成完整的执行计划；等待我确认后再执行。" }))} onApprove={() => perform(() => desktop.missions.approve(visibleMission.id))} />}</main>
+        </section>}{tab === "tasks" && <TaskTable tasks={visibleMission.tasks} onSelectTask={(id) => { selectTask(id); setTab("graph"); }} />}{tab === "context" && <ContextKernelView desktop={desktop} mission={visibleMission} task={selectedTask} />}{tab === "bus" && <MessageBus messages={visibleMission.messages} />}{tab === "activity" && <ActivityView events={visibleMission.events} onLoadMore={loadOlderEvents} hasMore={hasMoreEvents} busy={busy} />}{tab === "artifacts" && <ArtifactView mission={visibleMission} onAction={artifactAction} onPublish={(artifact, file) => setPublicationTarget({ artifact, file })} onExportReport={exportReport} busy={busy} />}{tab === "spec" && <SpecView desktop={desktop} onCodexRetry={retryPlan} mission={visibleMission} busy={busy} onRetryPlan={() => perform(() => desktop.missions.sendMessage({ missionId: visibleMission.id, text: "请根据原始需求重新生成完整的执行计划；等待我确认后再执行。" }))} onApprove={() => perform(() => desktop.missions.approve(visibleMission.id))} />}</main>
         <div className="mission-inspector-resizer" onPointerDown={resizeInspector} role="separator" aria-label="Resize agent inspector" />
         <Inspector mission={visibleMission} task={selectedTask} conversation={conversation} draft={draft} setDraft={setDraft} onSend={sendMessage} busy={busy} panel={inspectorPanel} setPanel={setInspectorPanel} focused={inspectorFocused} onToggleFocus={() => setInspectorFocused((value) => !value)} messageReceipt={messageReceipt} onResume={(taskId, text) => perform(() => desktop.missions.sendMessage({ missionId: visibleMission.id, taskId, text }))} onRequestChanges={(taskId, text) => perform(() => desktop.missions.sendMessage({ missionId: visibleMission.id, taskId, text }))} onArtifactAction={artifactAction} onAccept={(taskId) => perform(() => desktop.missions.acceptTask({ missionId: visibleMission.id, taskId }))} onRetry={(taskId) => perform(() => desktop.missions.retryTask({ missionId: visibleMission.id, taskId }))} onIntegrate={() => perform(() => desktop.missions.integrate(visibleMission.id))} onApproval={(requestId, decision) => perform(() => visibleMission.provider === "codex" ? desktop.codex.approval({ requestId, decision }) : desktop.missions.resolveApproval({ missionId: visibleMission.id, requestId, decision }))} />
       </div>}

@@ -1,5 +1,13 @@
 const taskPriority = ["waiting_approval", "blocked", "review"];
 
+export function canRetryCodexPlan(mission) {
+  return Boolean(mission?.provider === "codex" && mission.runtimeMode !== "agent_deck" && mission.status === "failed" && !mission.spec && !mission.tasks?.length && !mission.activeTurnId);
+}
+
+export function isCodexModelFailure(error) {
+  return /CODEX_MODEL_(?:NOT_LISTED|CATALOG_UNAVAILABLE)|model.*not supported when using Codex|model_not_found/i.test(String(error || ""));
+}
+
 export function isWorkspaceBlocker(task) {
   return task?.status === "blocked" && !task.agentThreadId && /Worktree isolation unavailable|\[(?:not_git_repository|missing_git_head|workspace_missing)\]/i.test(task.error || "");
 }
@@ -19,6 +27,12 @@ function firstTask(mission, status) {
  */
 export function nextMissionAction(mission) {
   if (!mission) return null;
+  if (canRetryCodexPlan(mission) && isCodexModelFailure(mission.error)) return {
+    kind: "recovery", task: null, tone: "attention", icon: "blocked",
+    title: "Codex 模型配置不兼容，执行计划尚未开始",
+    detail: "选择本地 Codex 模型列表中的型号后重试。原需求与失败记录会保留，计划仍需你确认。",
+    primaryLabel: "选择模型并重试", secondaryLabel: "查看活动", panel: "spec",
+  };
   for (const status of taskPriority) {
     const task = firstTask(mission, status);
     if (!task) continue;

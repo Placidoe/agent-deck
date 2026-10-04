@@ -41,6 +41,7 @@ test("all output contracts recursively satisfy strict object requirements", () =
 test("Codex rejects an invalid output contract before starting any provider request", async () => {
   const client = new CodexAppServer({ binary: "/unused-in-test" });
   const calls = [];
+  client.resolveModel = async () => "test-model";
   client.resumeThread = async () => { calls.push("resume"); };
   client.request = async (method, params) => { calls.push({ method, params }); return { turn: { id: "validated-turn" } }; };
   const broken = structuredClone(missionPlanSchema);

@@ -230,6 +230,7 @@ class MissionOrchestrator extends EventEmitter {
     // A thread accepts one active turn at a time. Queue transport per thread so
     // rapid interventions stay ordered without freezing the renderer.
     this.messageQueues = new Map();
+    this.planningRetries = new Set();
   }
 
   list() { return this.store.listMissions(); }
@@ -529,6 +530,65 @@ class MissionOrchestrator extends EventEmitter {
     return this.store.getMission(missionId);
   }
 
+  #retryableCodexPlan(missionId) {
+    const mission = this.store.getMission(missionId);
+    if (!mission || mission.provider !== "codex" || mission.runtimeMode === "agent_deck" || mission.status !== "failed" || mission.spec || mission.tasks.length || mission.activeTurnId || mission.messages.some(message => message.toAgent === "Main Agent" && message.deliveryStatus === "sending")) {
+      throw new Error("只能为未生成计划、尚未启动 Worker 的失败 Codex 任务选择模型并重试。");
+    }
+    return mission;
+  }
+
+  async plannerModels(missionId) {
+    const mission = this.#retryableCodexPlan(missionId);
+    return this.#runtime(mission).listModels({ refresh: true });
+  }
+
+  async retryPlan({ missionId, model }) {
+    if (this.planningRetries.has(missionId)) throw new Error("计划重试正在提交，请勿重复点击。");
+    this.planningRetries.add(missionId);
+    let started = false;
+    try {
+      const original = this.#retryableCodexPlan(missionId);
+      const runtime = this.#runtime(original);
+      if (!String(model || "").trim()) throw new Error("请明确选择重试模型。");
+      const selectedModel = await runtime.resolveModel(model, { refresh: true });
+      // Recheck after the async catalog lookup: cancel/other operations win.
+      this.#retryableCodexPlan(missionId);
+      const cwd = this.#executionCwd(original);
+      this.store.updateMission(missionId, { status: "planning", model: selectedModel, mainThreadId: null, error: null, activeTurnId: null });
+      started = true;
+      this.store.appendEvent(missionId, "planner.retry.requested", { previousModel: original.model, model: selectedModel, previousThreadId: original.mainThreadId, previousError: original.error, requiresPlanApproval: true });
+      this.#emit(missionId);
+      // A clean planner avoids inheriting the rejected model/context. Previous
+      // threads, runs and error evidence remain in the ledger; no Worker starts.
+      const created = await runtime.createThread({ cwd, title: `Mission · ${original.title}`, model: selectedModel, allowMutations: false });
+      if (this.store.getMission(missionId)?.status !== "planning") throw new Error("任务状态已改变，未提交重试 Turn。");
+      this.store.updateMission(missionId, { mainThreadId: created.thread.id, model: created.model || selectedModel });
+      const mission = this.store.getMission(missionId);
+      const route = plannerPerformanceRoute();
+      const turn = await runtime.sendTurn({ threadId: created.thread.id, cwd, model: mission.model, effort: route.effort, outputSchema: missionPlanSchema,
+        prompt: executionPolicy(mission) + this.#personalContext(mission, mission.outcome) + missionPlanningPrompt(mission, classifyMissionRequest({ ...mission, orchestrationMode: "mission" })) });
+      this.store.startRun({ missionId, agentId: `${missionId}:main`, threadId: created.thread.id, turnId: turn.id, phase: "planning", triggerType: "mission.retry_plan" });
+      const latest = this.store.getMission(missionId);
+      if (latest.status === "canceled") {
+        await runtime.interrupt({ threadId: created.thread.id, turnId: turn.id });
+        this.store.completeRun(created.thread.id, turn.id, { status: "interrupted", phase: "canceled" });
+        throw new Error("任务已取消，重试 Turn 已停止。");
+      }
+      if (latest.status === "planning") this.store.updateMission(missionId, { activeTurnId: turn.id });
+      this.store.appendEvent(missionId, "planner.retry.started", { model: mission.model, turnId: turn.id }, { threadId: created.thread.id });
+      this.#emit(missionId);
+      return this.store.getMission(missionId);
+    } catch (error) {
+      if (started && this.store.getMission(missionId)?.status === "planning") {
+        this.store.updateMission(missionId, { status: "failed", activeTurnId: null, error: error.message });
+        this.store.appendEvent(missionId, "planner.retry.failed", { message: error.message });
+        this.#emit(missionId);
+      }
+      throw error;
+    } finally { this.planningRetries.delete(missionId); }
+  }
+
   changeWorkspace(missionId, cwd, executionMode = null) {
     const mission = this.store.getMission(missionId);
     if (!mission || !["ready", "blocked"].includes(mission.status) || !mission.spec || mission.activeTurnId || this.dispatching.has(missionId) || mission.integrationPath || mission.tasks.some(task => task.agentThreadId || task.worktreePath || task.branch || !["queued", "blocked"].includes(task.status))) {
@@ -568,6 +628,7 @@ class MissionOrchestrator extends EventEmitter {
   }
 
   async sendMessage({ missionId, taskId, text }) {
+    if (!taskId && this.planningRetries.has(missionId)) throw new Error("计划重试正在提交，请稍后再发送消息。");
     const mission = this.store.getMission(missionId);
     if (!mission) throw new Error("Mission not found");
     const message = String(text || "").trim();

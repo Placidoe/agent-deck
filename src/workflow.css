@@ -1,5 +1,13 @@
 /* Shared desktop primitives: quiet surfaces, readable type, explicit pane sizing. */
 :root { --workflow-bg:#111417; --workflow-panel:#171b20; --workflow-line:#ffffff10; --workflow-muted:#929ba8; --workflow-accent:#8fb6fb; }
+.app-shell .codex-plan-recovery { flex:none; min-width:0; max-height:48vh; overflow:auto; margin:12px; padding:16px; border:1px solid #e5b86530; border-radius:10px; background:#211f1b; color:#dce3ec; }
+.codex-plan-recovery header { display:flex; align-items:flex-start; gap:10px; }.codex-plan-recovery header>svg { flex:none; color:#dab777; margin-top:2px; }
+.codex-plan-recovery strong { font-size:13px; font-weight:600; }.codex-plan-recovery p { margin:6px 0; color:#a7aeb8; font-size:12px; line-height:1.6; }
+.codex-plan-recovery-controls { display:flex; align-items:flex-end; flex-wrap:wrap; gap:8px; margin:14px 0 10px; }
+.codex-plan-recovery-controls label { flex:1 1 170px; min-width:0; max-width:340px; display:grid; gap:6px; color:#aab2be; font-size:11px; }
+.codex-plan-recovery-controls button { white-space:nowrap; }.codex-plan-recovery small { display:block; color:#9099a7; font-size:11px; line-height:1.6; }
+.codex-plan-recovery details { margin-top:10px; color:#969faa; font-size:11px; }.codex-plan-recovery summary { cursor:pointer; }
+.codex-plan-recovery pre { max-height:130px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; line-height:1.6; }
 * { scrollbar-width:thin; scrollbar-color:#4d5662 transparent; }
 ::-webkit-scrollbar { width:8px; height:8px; } ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { border:2px solid transparent; background:#515967; background-clip:padding-box; border-radius:9px; }

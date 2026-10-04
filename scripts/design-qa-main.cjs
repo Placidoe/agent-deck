@@ -15,6 +15,7 @@ execFileSync("/usr/bin/sqlite3", ["-readonly", path.join(profile, "agent-deck.sq
 const store = new MissionStore(db);
 const artifacts = new ArtifactService({ store });
 const library = new LibraryService({ store, artifacts });
+const modelClient = process.env.AGENT_DECK_MODEL_QA ? new (require("../desktop/codex-app-server.cjs").CodexAppServer)() : null;
 if (process.env.AGENT_DECK_WORKFLOW_QA) store.library.createFolder({ name: "产品文档 · 只读测试", rootPath: fs.realpathSync(path.join(__dirname, "../docs")) });
 const workspace = JSON.parse(fs.readFileSync(path.join(profile, "workspace.json"), "utf8"));
 workspace.name = path.basename(workspace.path);
@@ -29,6 +30,10 @@ const reads = {
   "missions:events": (input) => store.listEvents(input.missionId, input),
   "missions:sessions": (cwd) => store.listSessionRefs(cwd),
   "missions:save-ui-state": (input) => store.saveUiState(input.missionId, input.patch),
+  "missions:planner-models": () => {
+    if (!modelClient) throw new Error("只读布局验收未连接模型目录。");
+    return modelClient.listModels({ refresh: true });
+  },
   "requirements:list": (input) => store.listRequirements(input),
   "requirements:create": input => store.createRequirement(input),
   "requirements:update": input => store.updateRequirement(input.id, input.patch),
@@ -54,4 +59,4 @@ app.whenReady().then(() => {
   window.loadFile(path.resolve(__dirname, "../dist/client/index.html"));
 });
 app.on("window-all-closed", () => app.quit());
-app.on("will-quit", () => store.close());
+app.on("will-quit", () => { modelClient?.stop(); store.close(); });
