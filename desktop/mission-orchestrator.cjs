@@ -580,6 +580,9 @@ class MissionOrchestrator extends EventEmitter {
   #personalContext(mission, query, taskId = null) {
     if (!this.store.personal) return "";
     const context = this.store.personal.context({ projectId: mission.projectId, query, excludeMissionId: mission.id });
+    // Preserve the direct baseline: no personal state means no extra prompt.
+    // Once a snapshot was sent, an empty replacement still revokes old memory.
+    if (!context.project && !context.items.length && !this.store.personal.hasContext(mission.id)) return "";
     this.store.appendEvent(mission.id, "personal.context.selected", { projectId: mission.projectId, refs: context.items.map(item => item.ref), projectRevision: context.project?.revision, ...context.stats }, { taskId });
     return personalContextBlock(context);
   }

@@ -190,3 +190,19 @@ test("workers and follow-up turns refresh scoped memory after correction and rev
   await orchestrator.messageQueues.get("personal-worker");
   assert.doesNotMatch(calls[2].prompt, /更正后的偏好/);
 });
+
+test("unconfigured personal state adds no prompt overhead, but revocation sends an empty replacement", async t => {
+  const { store, personal, dir } = fixture(t); const calls = [];
+  const runtime = { createThread: async () => ({ thread: { id: "empty-personal" } }), sendTurn: async input => { calls.push(input); return { id: `t-${calls.length}` }; } };
+  const orchestrator = new MissionOrchestrator({ store, codex: runtime, worktrees: {} });
+  const mission = await orchestrator.create({ title: "产品调研", outcome: "报告", cwd: dir, orchestrationMode: "mission" });
+  assert.doesNotMatch(calls[0].prompt, /agent_deck_personal_context/);
+  const saved = memory(personal, { shareWithAgent: true });
+  store.updateMission(mission.id, { activeTurnId: null });
+  await orchestrator.sendMessage({ missionId: mission.id, text: "带上偏好" }); await orchestrator.messageQueues.get("empty-personal");
+  assert.match(calls[1].prompt, /中文报告/);
+  personal.saveMemory({ ...saved, shareWithAgent: false }); store.updateMission(mission.id, { activeTurnId: null });
+  await orchestrator.sendMessage({ missionId: mission.id, text: "取消偏好" }); await orchestrator.messageQueues.get("empty-personal");
+  assert.match(calls[2].prompt, /agent_deck_personal_context/); assert.doesNotMatch(calls[2].prompt, /中文报告/);
+  assert.match(calls[2].prompt, /"items":\[\]/);
+});
