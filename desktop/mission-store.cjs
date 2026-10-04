@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { decodeGitPath } = require("./path-utils.cjs");
 const { PersonalStore } = require("./personal-store.cjs");
+const { LibraryStore } = require("./library-store.cjs");
 const { assertMissionState, assertTaskState } = require("./mission-state.cjs");
 
 let BetterSqlite3 = null;
@@ -285,6 +286,7 @@ class MissionStore {
     this.#exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedupe ON mission_events(mission_id,dedupe_key) WHERE dedupe_key IS NOT NULL;");
     this.#exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_dedupe ON artifacts(mission_id,dedupe_key) WHERE dedupe_key IS NOT NULL;");
     this.personal = new PersonalStore({ all: sql => this.#all(sql), exec: sql => this.#exec(sql) });
+    this.library = new LibraryStore({ all: sql => this.#all(sql), exec: sql => this.#exec(sql) });
   }
 
   createMission(input) {
@@ -685,7 +687,8 @@ class MissionStore {
     const outcome = String(input.outcome || "").trim();
     const body = String(input.body || "").trim() || `需求：${title}`;
     const workspacePath = String(input.workspacePath || "").trim();
-    if (!title || !outcome || !workspacePath) throw new Error("Title, outcome, and workspace are required");
+    if (!title) throw new Error("Title is required");
+    if (input.status === "ready_to_plan" && (!outcome || !workspacePath)) throw new Error("Title, outcome, and workspace are required before planning");
     const priority = ["urgent", "high", "medium", "low"].includes(input.priority) ? input.priority : "medium";
     const status = ["inbox", "ready_to_plan"].includes(input.status) ? input.status : "inbox";
     const now = new Date().toISOString();
@@ -697,7 +700,7 @@ class MissionStore {
   }
 
   listRequirements(options = {}) {
-    const workspaceWhere = options.workspacePath ? `WHERE r.workspace_path=${quote(options.workspacePath)}` : "";
+    const workspaceWhere = options.workspacePath ? `WHERE (r.workspace_path=${quote(options.workspacePath)} OR r.workspace_path='')` : "";
     return this.#all(`SELECT r.*,m.status AS mission_status,m.title AS mission_title FROM requirements r LEFT JOIN missions m ON m.id=r.mission_id ${workspaceWhere} ORDER BY CASE r.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,r.updated_at DESC;`).map((row) => this.#requirement(row));
   }
 
@@ -720,11 +723,17 @@ class MissionStore {
       tokenBudget: patch.tokenBudget === undefined ? current.tokenBudget : normalizeTokenBudget(patch.tokenBudget),
       missionId: patch.missionId === undefined ? current.missionId : patch.missionId,
     };
-    if (!next.title || !next.outcome || !next.body || !next.workspacePath) throw new Error("Requirement fields cannot be empty");
+    if (!next.title || !next.body) throw new Error("Requirement fields cannot be empty");
+    if (!["inbox", "clarifying", "archived"].includes(next.status) && (!next.outcome || !next.workspacePath)) throw new Error("Outcome and workspace are required before planning");
     if (!allowedStatuses.has(next.status)) throw new Error("Unknown requirement status");
     if (!allowedPriorities.has(next.priority)) throw new Error("Unknown requirement priority");
+    if (patch.executionMode !== undefined && !["code", "research"].includes(patch.executionMode)) throw new Error("Invalid execution mode");
+    if (patch.executionMode !== undefined && current.missionId) throw new Error("执行模式已锁定，请在执行计划中更换");
     const now = new Date().toISOString();
     this.#exec(`UPDATE requirements SET title=${quote(next.title)},outcome=${quote(next.outcome)},body=${quote(next.body)},source_type=${quote(next.sourceType)},source_ref=${quote(next.sourceRef)},workspace_path=${quote(next.workspacePath)},priority=${quote(next.priority)},status=${quote(next.status)},labels_json=${json(next.labels)},acceptance_json=${json(next.acceptanceCriteria)},token_budget=${quote(next.tokenBudget)},mission_id=${quote(next.missionId)},updated_at=${quote(now)} WHERE id=${quote(id)};`);
+    if (patch.executionMode !== undefined) {
+      this.#exec(`UPDATE requirements SET execution_mode=${quote(patch.executionMode)} WHERE id=${quote(id)};`);
+    }
     return this.getRequirement(id);
   }
 
@@ -732,6 +741,7 @@ class MissionStore {
     const current = this.getRequirement(id);
     if (!current) throw new Error("Requirement was not found");
     if (current.missionId || !["inbox", "clarifying", "ready_to_plan", "blocked"].includes(current.status)) throw new Error("Requirement is already linked to an active or completed Mission");
+    if (!current.outcome || !current.workspacePath) throw new Error("请先补充完成标准并选择工作区，再开始拆解计划。");
     return this.updateRequirement(id, { status: "planning" });
   }
 

@@ -1,0 +1,111 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { MissionStore } = require("../desktop/mission-store.cjs");
+const { LibraryService } = require("../desktop/library-service.cjs");
+const { ArtifactService } = require("../desktop/artifact-service.cjs");
+function fixture(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-deck-library-"));
+  const db = path.join(dir, "work.sqlite3"), store = new MissionStore(db);
+  t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const artifacts = new ArtifactService({ store });
+  return { dir, db, store, library: store.library, service: new LibraryService({ store, artifacts }) };
+}
+const work = (store, cwd) => store.createMission({ title: "文档工作", outcome: "报告", cwd });
+test("one-line notes persist without workspace, output or model dispatch", t => {
+  const { store, db } = fixture(t);
+  const note = store.createRequirement({ title: "一个想法", status: "inbox" });
+  assert.equal(note.workspacePath, ""); assert.equal(note.missionId, null);
+  assert.equal(store.listMissions().length, 0);
+  assert.equal(store.listRequirements({ workspacePath: "/later" })[0].id, note.id);
+  assert.throws(() => store.claimRequirement(note.id), /补充/);
+  const reopened = new MissionStore(db); t.after(() => reopened.close());
+  assert.equal(reopened.getRequirement(note.id).title, "一个想法");
+  store.updateRequirement(note.id, { outcome: "可验收报告", workspacePath: "/later", status: "ready_to_plan", executionMode: "research" });
+  assert.equal(store.claimRequirement(note.id).status, "planning");
+  assert.equal(store.getRequirement(note.id).executionMode, "research");
+});
+test("bad draft updates do not partially save or downgrade a pinned mode", t => {
+  const { store } = fixture(t); const note = store.createRequirement({ title: "旧笔记" });
+  assert.throws(() => store.updateRequirement(note.id, { title: "错误修改", executionMode: "unknown" }), /mode/);
+  assert.equal(store.getRequirement(note.id).title, "旧笔记");
+  assert.throws(() => store.updateRequirement(note.id, { status: "ready_to_plan" }), /required/);
+  assert.equal(store.getRequirement(note.id).status, "inbox");
+});
+test("every published file enters the library without accepting or changing the work", t => {
+  const { store, library, dir } = fixture(t); const mission = work(store, dir);
+  store.addArtifact({ missionId: mission.id, title: "成果", summary: "真实登记", files: ["report.html", "data.csv"] });
+  assert.equal(library.files().items.length, 2);
+  assert.equal(library.files({ kind: "document" }).items[0].name, "report.html");
+  assert.equal(library.files({ kind: "asset" }).items[0].name, "data.csv");
+  assert.equal(library.files().items[0].verificationStatus, "unverified");
+  assert.equal(store.getMission(mission.id).status, mission.status);
+});
+test("nested categories and assignments survive reopening without moving source files", t => {
+  const { store, library, dir, db } = fixture(t); const mission = work(store, dir);
+  fs.writeFileSync(path.join(dir, "report.html"), "<h1>报告</h1>");
+  store.addArtifact({ missionId: mission.id, title: "报告", summary: "", files: ["report.html"] });
+  const top = library.createFolder({ name: "文档" }), child = library.createFolder({ name: "研究", parentId: top.id });
+  const file = library.files().items[0]; library.assign({ fileKey: file.key, folderId: child.id });
+  const reopened = new MissionStore(db); t.after(() => reopened.close());
+  assert.equal(reopened.library.folders().find(f => f.id === child.id).parentId, top.id);
+  assert.equal(reopened.library.files({ folderId: child.id }).items[0].name, "report.html");
+  assert.equal(library.history({ folderId: child.id })[0].id, mission.id);
+  assert.ok(fs.existsSync(path.join(dir, "report.html")));
+  assert.throws(() => library.createFolder({ name: "bad", parentId: "missing" }), /不存在/);
+  assert.throws(() => library.assign({ fileKey: '["missing",null,"a"]', folderId: child.id }), /不存在/);
+  store.addArtifact({ missionId: mission.id, title: "更新后的报告", summary: "", files: [path.join(dir, "report.html")], createdAt: "2099-01-01T00:00:00Z" });
+  const revised = library.files({ folderId: child.id }).items;
+  assert.equal(revised.length, 1); assert.equal(revised[0].title, "更新后的报告");
+});
+test("filtered pagination is stable, bounded and does not leak full chat/spec payloads", t => {
+  const { store, library, dir } = fixture(t); const mission = work(store, dir), other = work(store, "/other");
+  for (let i = 0; i < 7; i++) store.addArtifact({ missionId: i % 2 ? other.id : mission.id, title: `报告${i}`, summary: "", files: [`${i}.html`], createdAt: "2026-10-01T00:00:00Z" });
+  const first = library.files({ workspacePath: dir, limit: 2 });
+  const second = library.files({ workspacePath: dir, limit: 2, before: first.nextBefore });
+  assert.equal(first.items.length + second.items.length, 4);
+  assert.equal(new Set([...first.items, ...second.items].map(f => f.key)).size, 4);
+  assert.equal(second.nextBefore, null);
+  assert.equal(library.files({ query: "报告6" }).items.length, 1);
+  assert.equal("spec" in first.items[0], false);
+  assert.throws(() => library.files({ before: "missing" }), /游标/);
+});
+test("workspace history shares a folder across runs and orders completed before unfinished", t => {
+  const { store, library, dir } = fixture(t); const old = work(store, dir), recent = work(store, dir), pending = work(store, dir);
+  store.updateMission(old.id, { status: "completed", mainThreadId: "old-thread" });
+  store.updateMission(recent.id, { status: "completed", mainThreadId: "recent-thread" });
+  const history = library.history({ workspacePath: dir });
+  assert.equal(history.length, 3); assert.equal(history.at(-1).id, pending.id);
+  assert.ok(history[0].completedAt); assert.ok(history[0].threadId);
+  assert.equal(library.sessions({ missionId: old.id })[0].threadId, "old-thread");
+  assert.deepEqual(library.sessions({ missionId: pending.id }), []);
+  assert.throws(() => library.sessions({ missionId: "missing" }), /不存在/);
+});
+test("connected folders are read only, bounded, and reject lexical and symlink escapes", t => {
+  const { library, service, dir } = fixture(t); const root = path.join(dir, "source"); fs.mkdirSync(root);
+  fs.writeFileSync(path.join(dir, "secret.txt"), "secret"); fs.symlinkSync(path.join(dir, "secret.txt"), path.join(root, "escape.txt"));
+  for (let i = 0; i < 105; i++) fs.writeFileSync(path.join(root, `${i}.txt`), `line ${i}`);
+  const folder = library.createFolder({ name: "已有目录", rootPath: fs.realpathSync(root) });
+  const first = service.browse({ folderId: folder.id }), second = service.browse({ folderId: folder.id, offset: first.nextOffset });
+  assert.equal(first.items.length, 100); assert.equal(second.items.length, 6);
+  assert.throws(() => service.preview({ folderId: folder.id, file: "../secret.txt" }), /超出/);
+  assert.throws(() => service.preview({ folderId: folder.id, file: "escape.txt" }), /超出/);
+  assert.throws(() => service.preview({ folderId: folder.id, file: path.join(dir, "secret.txt") }), /相对/);
+  assert.equal(service.preview({ folderId: folder.id, file: "0.txt" }).content, "line 0");
+  assert.equal(fs.readFileSync(path.join(root, "0.txt"), "utf8"), "line 0");
+});
+test("library HTML preview is sandbox-ready; non-HTML text and missing files are honest", t => {
+  const { store, service, dir } = fixture(t); const mission = work(store, dir);
+  fs.writeFileSync(path.join(dir, "report.html"), '<h1>报告</h1><script>fetch("https://evil")</script>');
+  fs.writeFileSync(path.join(dir, "note.md"), "# 笔记");
+  const artifact = store.addArtifact({ missionId: mission.id, title: "报告", summary: "", files: ["report.html", "note.md", "missing.html"] });
+  const ref = { missionId: mission.id, artifactId: artifact.id };
+  assert.match(service.preview({ ...ref, file: "report.html" }).content, /Content-Security-Policy/);
+  assert.equal(service.preview({ ...ref, file: "note.md" }).content, "# 笔记");
+  assert.throws(() => service.preview({ ...ref, file: "missing.html" }), /不存在/);
+  assert.throws(() => service.preview({ ...ref, file: "not-published.txt" }), /not published/);
+});

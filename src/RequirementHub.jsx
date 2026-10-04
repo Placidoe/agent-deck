@@ -1,3 +1,4 @@
+import { SelectControl } from "./SelectControl.jsx";
 import { ExecutionModeField } from "./ExecutionModeField.jsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowsClockwise, ArrowRight, CaretDown, ClipboardText, Play, Plus, Sparkle, Warning, X } from "@phosphor-icons/react";
@@ -7,7 +8,7 @@ import { PersonalPanel, ProjectSelect } from "./PersonalPanel.jsx";
 
 const priorityRank = { urgent: 0, high: 1, medium: 2, low: 3 };
 const statusMeta = {
-  inbox: { label: "待补充", tone: "quiet" }, clarifying: { label: "需要补充", tone: "attention" },
+  inbox: { label: "随手记", tone: "quiet" }, clarifying: { label: "需要补充", tone: "attention" },
   ready_to_plan: { label: "待生成计划", tone: "ready" }, planning: { label: "正在生成计划", tone: "working" },
   awaiting_approval: { label: "等你确认计划", tone: "attention" }, running: { label: "正在执行", tone: "working" },
   review: { label: "等你验收", tone: "attention" }, done: { label: "已完成", tone: "done" },
@@ -36,7 +37,7 @@ function RequirementComposer({ workspace, projects = [], projectId, onChooseWork
   const [chosenProject, setChosenProject] = useState(projects.some(item => item.id === projectId && item.status === "active") ? projectId : "");
   const [title, setTitle] = useState(""); const [outcome, setOutcome] = useState(""); const [body, setBody] = useState("");
   const [executionMode, setExecutionMode] = useState("code");
-  const [priority, setPriority] = useState("medium"); const [showMore, setShowMore] = useState(false); const [startNow, setStartNow] = useState(true);
+  const [priority, setPriority] = useState("medium"); const [showMore, setShowMore] = useState(false); const [startNow, setStartNow] = useState(false);
   const [tokenBudget, setTokenBudget] = useState("80000");
   useEffect(() => {
     const onKeyDown = (event) => { if (event.key === "Escape" && !creating) onClose(); };
@@ -44,8 +45,8 @@ function RequirementComposer({ workspace, projects = [], projectId, onChooseWork
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [creating, onClose]);
   const submit = async (event) => {
-    event.preventDefault(); if (!workspace || !title.trim() || !outcome.trim()) return;
-    const created = await onCreate({ projectId: chosenProject || null, title: title.trim(), outcome: outcome.trim(), body: body.trim(), priority, status: "ready_to_plan", workspacePath: workspace.path, executionMode, sourceType: "manual", tokenBudget: Number(tokenBudget || 80000) });
+    event.preventDefault(); if (!title.trim() || (startNow && (!workspace || !outcome.trim()))) return;
+    const created = await onCreate({ projectId: chosenProject || null, title: title.trim(), outcome: outcome.trim(), body: body.trim(), priority, status: startNow ? "ready_to_plan" : "inbox", workspacePath: workspace?.path || "", executionMode, sourceType: "manual", tokenBudget: Number(tokenBudget || 80000) });
     if (!created) return;
     onClose(); if (startNow) await onStartPlan(created);
   };
@@ -56,11 +57,11 @@ function RequirementComposer({ workspace, projects = [], projectId, onChooseWork
       <ExecutionModeField value={executionMode} onChange={setExecutionMode} />
       <ProjectSelect projects={projects.filter(item => item.status === "active")} value={chosenProject} onChange={setChosenProject} label="所属个人项目（可选）" />
       <label>一句话描述要做的事 <b>必填</b><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：给产品加一个审批需求列表" /></label>
-      <label>做到什么程度算完成？ <b>必填</b><input value={outcome} onChange={(event) => setOutcome(event.target.value)} placeholder="例如：能创建、筛选、确认审批需求，并有测试" /></label>
+      <label>做到什么程度算完成？ <b>{startNow ? "必填" : "可以之后再补"}</b><input value={outcome} onChange={(event) => setOutcome(event.target.value)} placeholder="例如：能创建、筛选、确认审批需求，并有测试" /></label>
       <button type="button" className="more-options" onClick={() => setShowMore((value) => !value)} aria-expanded={showMore}><CaretDown size={15} weight="bold" />{showMore ? "收起补充信息" : "补充背景、链接或优先级（可选）"}</button>
-      {showMore ? <div className="more-fields"><label>补充说明<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="已有背景、限制、参考链接、验收细节……" /></label><label>优先级<select value={priority} onChange={(event) => setPriority(event.target.value)}><option value="urgent">紧急</option><option value="high">高</option><option value="medium">普通</option><option value="low">低</option></select></label><label>Token 预算<input type="number" min="1000" max="5000000" value={tokenBudget} onChange={(event) => setTokenBudget(event.target.value)} /><small>规划执行规模，不代表实际消耗。</small></label></div> : null}
+      {showMore ? <div className="more-fields"><label>补充说明<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="已有背景、限制、参考链接、验收细节……" /></label><label>优先级<SelectControl value={priority} onChange={(event) => setPriority(event.target.value)}><option value="urgent">紧急</option><option value="high">高</option><option value="medium">普通</option><option value="low">低</option></SelectControl></label><label>Token 预算<input type="number" min="1000" max="5000000" value={tokenBudget} onChange={(event) => setTokenBudget(event.target.value)} /><small>规划执行规模，不代表实际消耗。</small></label></div> : null}
       <label className="start-planning"><input type="checkbox" checked={startNow} onChange={(event) => setStartNow(event.target.checked)} /><span><strong>保存后立即生成计划</strong><small>只会分析和拆解，不会直接执行或修改代码。</small></span></label>
-      <footer><button type="button" className="secondary-button" onClick={onClose}>取消</button><button disabled={creating || !workspace || !title.trim() || !outcome.trim()}>{creating ? "正在保存…" : <><Sparkle size={16} weight="fill" />{startNow ? "保存并生成计划" : "保存需求"}</>}</button></footer>
+      <footer><button type="button" className="secondary-button" onClick={onClose}>取消</button><button disabled={creating || !title.trim() || (startNow && (!workspace || !outcome.trim()))}>{creating ? "正在保存…" : <><Sparkle size={16} weight="fill" />{startNow ? "保存并生成计划" : "保存需求"}</>}</button></footer>
     </form>
   </div>;
 }
@@ -69,13 +70,39 @@ function RequirementQueue({ requirements, selectedId, onSelect, filter, setFilte
   const counts = { all: requirements.length, active: requirements.filter((item) => !["done", "archived"].includes(item.status)).length, done: requirements.filter((item) => item.status === "done").length };
   const visible = requirements.filter((item) => filter === "all" || (filter === "active" ? item.status !== "done" && item.status !== "archived" : item.status === "done"));
   return <aside className="requirement-queue"><header><h2>我的工作</h2><span className="queue-count">{requirements.length}</span></header>
-    <div className="requirement-filter" role="tablist" aria-label="筛选需求">{[["all", "全部"], ["active", "进行中"], ["done", "已完成"]].map(([value, label]) => <button key={value} role="tab" aria-selected={filter === value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label}<span>{counts[value]}</span></button>)}</div>
+    <div className="requirement-filter" role="tablist" aria-label="筛选需求">{[["all", "全部"], ["active", "未完成"], ["done", "已完成"]].map(([value, label]) => <button key={value} role="tab" aria-selected={filter === value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label}<span>{counts[value]}</span></button>)}</div>
     <div className="requirement-list">{visible.length ? visible.map((item) => { const state = statusFor(item.status); return <button type="button" key={item.id} className={selectedId === item.id ? "selected" : ""} onClick={() => onSelect(item.id)}><div className="requirement-list-state"><span className={`status-dot ${state.tone}`} /><span>{state.label}</span><time>{relativeTime(item.updatedAt)}</time></div><strong>{item.title}</strong><small>{item.outcome}</small></button>; }) : <div className="requirement-list-empty"><ClipboardText size={26} /><strong>{filter === "all" ? "还没有工作" : "这里暂时没有内容"}</strong><span>{filter === "all" ? "从一件你想推进的事开始。" : "切换筛选，或创建一条新需求。"}</span>{filter === "all" ? <button onClick={onCreate}><Plus size={15} />创建第一项工作</button> : null}</div>}</div>
   </aside>;
 }
 
-function RequirementDetail({ requirement, projects, onLinkProject, onStartPlan, onOpenMission, claiming, onCreate }) {
+function DraftDetail({ requirement, workspace, onChooseWorkspace, onSave, onStartPlan, busy }) {
+  const [title, setTitle] = useState(requirement.title);
+  const [outcome, setOutcome] = useState(requirement.outcome || "");
+  const [body, setBody] = useState(requirement.body || "");
+  const [mode, setMode] = useState(requirement.executionMode || "research");
+  const [saving, setSaving] = useState(false);
+  const save = async start => {
+    if (saving || busy) return;
+    setSaving(true);
+    try {
+      const updated = await onSave(requirement, { title: title.trim(), outcome: outcome.trim(), body: body.trim() || title.trim(), workspacePath: workspace?.path || requirement.workspacePath || "", executionMode: mode, status: start ? "ready_to_plan" : "inbox" });
+      if (start && updated) await onStartPlan(updated);
+    } finally { setSaving(false); }
+  };
+  return <section className="requirement-detail"><div className="requirement-detail-shell draft-detail">
+    <header><span className="eyebrow">随手记 · 还未执行</span><h1>把这件事准备好</h1><p>可以继续记笔记；准备好时，再让 Agent 拆解计划。</p></header>
+    <label>任务名称<input value={title} onChange={e => setTitle(e.target.value)} maxLength={300} /></label>
+    <label>完成标准<input value={outcome} onChange={e => setOutcome(e.target.value)} placeholder="例如：交付一份带来源的 HTML 方案，可离线阅读" /></label>
+    <label>笔记与背景<textarea rows={6} value={body} onChange={e => setBody(e.target.value)} /></label>
+    <ExecutionModeField value={mode} onChange={setMode} />
+    <div className="draft-workspace"><span>工作区</span><strong title={workspace?.path || requirement.workspacePath}>{workspace?.name || requirement.workspacePath || "尚未选择"}</strong><button onClick={onChooseWorkspace}>选择文件夹</button></div>
+    <footer><button disabled={saving || busy || !title.trim()} onClick={() => save(false)}>保存笔记</button><button className="primary-button" disabled={saving || busy || !title.trim() || !outcome.trim() || !(workspace?.path || requirement.workspacePath)} onClick={() => save(true)}><Play size={14} weight="fill" />{saving || busy ? "正在准备…" : "开始做 · 拆解计划"}</button></footer><small>先生成子任务和依赖，确认计划后才执行。保存笔记不消耗模型 Token。</small>
+  </div></section>;
+}
+
+function RequirementDetail({ requirement, workspace, onChooseWorkspace, onSaveDraft, projects, onLinkProject, onStartPlan, onOpenMission, claiming, onCreate }) {
   if (!requirement) return <section className="requirement-detail empty"><div className="empty-icon"><ClipboardText size={27} /></div><h2>从一件想完成的事开始</h2><p>写下想达成的结果，主 Agent 会先准备计划，再由你决定是否执行。</p><button onClick={onCreate}><Plus size={16} />新建工作</button><div className="how-it-works"><span>1 写清目标</span><ArrowRight size={14} /><span>2 看执行计划</span><ArrowRight size={14} /><span>3 确认后执行</span></div></section>;
+  if (!requirement.missionId) return <DraftDetail key={requirement.id} requirement={requirement} workspace={workspace} onChooseWorkspace={onChooseWorkspace} onSave={onSaveDraft} onStartPlan={onStartPlan} busy={claiming} />;
   const state = statusFor(requirement.status); const next = nextStep(requirement); const canStart = !requirement.missionId && ["inbox", "clarifying", "ready_to_plan", "blocked"].includes(requirement.status); const action = () => canStart ? onStartPlan(requirement) : onOpenMission(requirement);
   const hasRail = Boolean(requirement.missionId);
   return <section className="requirement-detail"><div className="requirement-detail-shell"><header className="detail-heading"><div><span className="eyebrow">工作目标</span><h1>{requirement.title}</h1><div className="detail-status"><span className={`status-dot ${state.tone}`} />{state.label}<span className="detail-updated">更新于 {relativeTime(requirement.updatedAt)}</span></div></div></header>
@@ -91,6 +118,7 @@ export function RequirementHub({ desktop, workspace, codexStatus, onOpenMission,
   useEffect(() => { try { localStorage.setItem("agentdeck.personal.projectId", projectId); } catch {} }, [projectId]);
   const loadProjects = useCallback(async () => { if (desktop?.personal) { const items = await desktop.personal.projects(); setProjects(items); setProjectId(current => items.some(item => item.id === current) ? current : ""); } }, [desktop]);
   useEffect(() => { loadProjects().catch(err => setError(err.message)); const off = desktop?.personal?.onChange?.(() => loadProjects().catch(err => setError(err.message))); return () => off?.(); }, [desktop, loadProjects]);
+  const [capture, setCapture] = useState("");
   const [requirements, setRequirements] = useState([]); const [selectedId, setSelectedId] = useState(initialSelectedId); const [creating, setCreating] = useState(false); const [claiming, setClaiming] = useState(false); const [error, setError] = useState(""); const [composerOpen, setComposerOpen] = useState(false); const [filter, setFilter] = useState("all");
   useEffect(() => { if (selectedId) onSelectionChange?.(selectedId); }, [selectedId, onSelectionChange]);
   const loadRevision = useRef(0);
@@ -110,6 +138,7 @@ export function RequirementHub({ desktop, workspace, codexStatus, onOpenMission,
   useEffect(() => { let timer; const off = desktop?.missions?.onUpdate?.(() => { clearTimeout(timer); timer = setTimeout(load, 600); }); return () => { clearTimeout(timer); off?.(); }; }, [desktop, load]);
   const selected = requirements.find((item) => item.id === selectedId) || null; const sorted = useMemo(() => [...requirements].sort((left, right) => priorityRank[left.priority] - priorityRank[right.priority] || String(right.updatedAt).localeCompare(String(left.updatedAt))), [requirements]); const readyCount = sorted.filter((item) => item.status === "ready_to_plan").length;
   const create = async (input) => { setCreating(true); try { const next = await desktop.requirements.create(input); await load(); setProjectId(next.projectId || ""); setPersonalOpen(false); setSelectedId(next.id); return next; } catch (createError) { setError(createError.message || String(createError)); return null; } finally { setCreating(false); } };
+  const saveDraft = async (requirement, patch) => { try { const updated = await desktop.requirements.update({ id: requirement.id, patch }); await load(); return updated; } catch (err) { setError(err.message || String(err)); return null; } };
   const startPlan = async requirement => {
     if (!desktop?.requirements?.claimNext) { setError("开始工作需要桌面运行环境。"); return; }
     setClaiming(true);
@@ -122,9 +151,10 @@ export function RequirementHub({ desktop, workspace, codexStatus, onOpenMission,
   };
   const startNext = async () => { const next = sorted.find(item => item.status === "ready_to_plan"); if (next) await startPlan(next); };
   const linkProject = async (work, nextProject) => { try { await desktop.personal.linkWork({ projectId: nextProject || null, ...(work.workSource === "mission" ? { missionId: work.missionId } : { requirementId: work.id }) }); await load(); await loadProjects(); } catch (err) { setError(err.message || String(err)); } };
-  return <section className="requirement-hub" data-testid="requirement-hub"><header className="requirement-hub-header"><div><h1>工作</h1><p>写下目标，跟进执行，确认交付。</p></div><div className="requirement-header-actions"><button className="quiet-action" onClick={() => setPersonalOpen(true)}>项目与记忆</button><button className="quiet-action" onClick={load}><ArrowsClockwise size={15} />刷新</button><button className="new-requirement" onClick={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()}><Plus size={16} />新建工作</button>{readyCount ? <button className="claim-next" onClick={startNext} disabled={claiming}><Play size={14} weight="fill" />{claiming ? "正在启动…" : `开始下一条 (${readyCount})`}</button> : null}</div></header>
+  return <section className="requirement-hub" data-testid="requirement-hub"><header className="requirement-hub-header"><div><h1>工作</h1><p>先记下来，再开始做。拆解、执行、验收与归档在一条流程里。</p></div><div className="requirement-header-actions"><button className="quiet-action" onClick={() => setPersonalOpen(true)}>项目与记忆</button><button className="quiet-action" onClick={load}><ArrowsClockwise size={15} />刷新</button><button className="new-requirement" onClick={() => setComposerOpen(true)}><Plus size={16} />新建工作</button>{readyCount ? <button className="claim-next" onClick={startNext} disabled={claiming}><Play size={14} weight="fill" />{claiming ? "正在启动…" : `开始下一条 (${readyCount})`}</button> : null}</div></header>
     {!workspace ? <div className="workspace-callout"><Warning size={17} /><div><strong>先选择一个本地工作区</strong><span>工作记录保存在本机，Agent 在你选择的目录中执行。</span></div><button onClick={onChooseWorkspace}>选择工作区</button></div> : <div className="workspace-strip"><span>当前工作区</span><strong>{workspace.name}</strong><small title={workspace.path}>{workspace.path}</small></div>}{error ? <div className="requirement-error"><Warning size={15} />{error}<button onClick={() => setError("")} aria-label="关闭提示"><X size={14} /></button></div> : null}
     {desktop?.personal && !personalOpen ? <div className="work-project-bar"><ProjectSelect projects={projects} value={projectId} onChange={setProjectId} all /><small>{projectId ? "查看这个项目在所有工作区的工作" : "项目可跨多次工作持续保留目标"}</small></div> : null}
-    <div className="requirement-layout"><RequirementQueue requirements={sorted} selectedId={selectedId} onSelect={id => { setSelectedId(id); setPersonalOpen(false); }} filter={filter} setFilter={setFilter} onCreate={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} />{personalOpen ? <PersonalPanel desktop={desktop} projects={projects} projectId={projectId} onProjectChange={setProjectId} onChanged={async () => { await loadProjects(); await load(); }} onBack={() => setPersonalOpen(false)} onOpenMission={onOpenMission} onNewWork={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} /> : <RequirementDetail requirement={selected} projects={projects} onLinkProject={linkProject} onStartPlan={startPlan} onOpenMission={onOpenMission} claiming={claiming} onCreate={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} />}</div>{composerOpen ? <RequirementComposer workspace={workspace} projects={projects} projectId={projectId} onChooseWorkspace={onChooseWorkspace} creating={creating} onCreate={create} onStartPlan={startPlan} onClose={() => setComposerOpen(false)} /> : null}
+    <form className="quick-capture" aria-label="随手记录" onSubmit={async event => { event.preventDefault(); if (!capture.trim() || creating) return; const saved = await create({ title: capture.trim(), status: "inbox", workspacePath: workspace?.path || "", projectId: projectId || null }); if (saved) setCapture(""); }}><Plus size={17} /><input aria-label="记录一件事" placeholder="记一个想法、待办或笔记…  回车保存，不会开始执行" value={capture} onChange={event => setCapture(event.target.value)} maxLength={300} /><button disabled={!desktop || creating || !capture.trim()}>{creating ? "保存中…" : "记下来"}</button></form>
+    <div className="requirement-layout"><RequirementQueue requirements={sorted} selectedId={selectedId} onSelect={id => { setSelectedId(id); setPersonalOpen(false); }} filter={filter} setFilter={setFilter} onCreate={() => setComposerOpen(true)} />{personalOpen ? <PersonalPanel desktop={desktop} projects={projects} projectId={projectId} onProjectChange={setProjectId} onChanged={async () => { await loadProjects(); await load(); }} onBack={() => setPersonalOpen(false)} onOpenMission={onOpenMission} onNewWork={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} /> : <RequirementDetail requirement={selected} workspace={workspace} onChooseWorkspace={onChooseWorkspace} onSaveDraft={saveDraft} projects={projects} onLinkProject={linkProject} onStartPlan={startPlan} onOpenMission={onOpenMission} claiming={claiming} onCreate={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} />}</div>{composerOpen ? <RequirementComposer workspace={workspace} projects={projects} projectId={projectId} onChooseWorkspace={onChooseWorkspace} creating={creating} onCreate={create} onStartPlan={startPlan} onClose={() => setComposerOpen(false)} /> : null}
   </section>;
 }

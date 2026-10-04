@@ -1,3 +1,4 @@
+import { SelectControl } from "./SelectControl.jsx";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Plus, X } from "@phosphor-icons/react";
 import "./personal.css";
@@ -5,7 +6,7 @@ import "./personal.css";
 const labels = { planning: "生成计划中", ready: "待确认计划", running: "执行中", review: "待验收", completed: "已完成", ready_to_integrate: "待集成", integrating: "集成中", blocked: "受阻", failed: "失败", integration_conflict: "集成冲突", canceled: "已取消", waiting_approval: "待批准操作" };
 
 export function ProjectSelect({ projects, value, onChange, label = "个人项目", all = false }) {
-  return <label className="personal-project-select"><span>{label}</span><select value={value || ""} onChange={event => onChange(event.target.value)}><option value="">{all ? "当前工作区 · 全部工作" : "不关联项目"}</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}{project.status === "archived" ? " · 已归档" : ""}</option>)}</select></label>;
+  return <label className="personal-project-select"><span>{label}</span><SelectControl value={value || ""} onChange={event => onChange(event.target.value)}><option value="">{all ? "当前工作区 · 全部工作" : "不关联项目"}</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}{project.status === "archived" ? " · 已归档" : ""}</option>)}</SelectControl></label>;
 }
 
 function ProjectForm({ project, busy, onSave, onClose }) {
@@ -35,7 +36,7 @@ function MemoryForm({ memory, project, busy, onSave, onClose }) {
     <p>作用范围：{scope}。由你确认，不会从聊天里自动推断。</p>
     <label>记忆名称<input autoFocus required maxLength={100} value={key} onChange={event => setKey(event.target.value)} placeholder="例如：报告语言" /></label>
     <label>记住什么<textarea required maxLength={2400} value={content} onChange={event => setContent(event.target.value)} placeholder="例如：研究报告用中文；保留一手来源链接。" /></label>
-    <details className="personal-memory-options"><summary>来源、有效期与确认状态（可选）</summary><div className="personal-form-row"><label>类型<select value={kind} onChange={event => setKind(event.target.value)}><option value="preference">个人偏好</option><option value="fact">事实</option><option value="decision">已作决定</option><option value="goal">长期目标</option></select></label><label>确认状态<select value={status} onChange={event => setStatus(event.target.value)}><option value="confirmed">已确认</option><option value="candidate">待确认，不用于执行</option></select></label></div>
+    <details className="personal-memory-options"><summary>来源、有效期与确认状态（可选）</summary><div className="personal-form-row"><label>类型<SelectControl value={kind} onChange={event => setKind(event.target.value)}><option value="preference">个人偏好</option><option value="fact">事实</option><option value="decision">已作决定</option><option value="goal">长期目标</option></SelectControl></label><label>确认状态<SelectControl value={status} onChange={event => setStatus(event.target.value)}><option value="confirmed">已确认</option><option value="candidate">待确认，不用于执行</option></SelectControl></label></div>
     <div className="personal-form-row"><label>来源说明<input maxLength={160} value={source} onChange={event => setSource(event.target.value)} /></label><label>有效期（可选）<input type="datetime-local" value={expires} onChange={event => setExpires(event.target.value)} /></label></div>
     <label>来源链接或路径（可选）<input maxLength={500} value={sourceRef} onChange={event => setSourceRef(event.target.value)} /></label></details>
     <label className="personal-checkbox"><input type="checkbox" checked={share} onChange={event => setShare(event.target.checked)} /><span>允许用于 Agent 请求<small>内容及来源可能发送给你配置的模型服务。取消后不再主动注入新请求；不会撤回或抹除已有会话内容。</small></span></label>

@@ -1,3 +1,4 @@
+import { SelectControl } from "./SelectControl.jsx";
 import { useMemo, useState } from "react";
 import { ArrowRight, ArrowsClockwise, CheckCircle, Clock, GitMerge, ListChecks, ShieldWarning, Sparkle, Warning, WarningCircle } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
@@ -52,7 +53,7 @@ export function AttentionCenter({ items, briefing, loading, error, onRefresh, on
     <header className="attention-header"><div><h1>待我处理 <small>{rankedItems.length}</small></h1><p>只看需要你决定的事。其余工作继续由 Agent 推进。</p></div><button type="button" aria-label="刷新待办" onClick={onRefresh} disabled={loading}><ArrowsClockwise size={16} /></button></header>
     <div className="attention-view-options">
       <nav aria-label="注意力视图">{[["focus", "逐项处理"], ["control", "全部待办"], ["briefing", "工作简报"]].map(([id, label]) => <button key={id} aria-current={lens === id ? "page" : undefined} onClick={() => chooseLens(id)}>{label}</button>)}</nav>
-      <label>优先考虑<select aria-label="待办排序偏好" value={profile} onChange={event => chooseProfile(event.target.value)}>{attentionProfiles.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+      <label>优先考虑<SelectControl aria-label="待办排序偏好" value={profile} onChange={event => chooseProfile(event.target.value)}>{attentionProfiles.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</SelectControl></label>
     </div>
     <div className="attention-projection">{error ? <div className="attention-error" role="alert"><Warning size={16} />{error}</div> : null}{loading && !items.length ? <div className="attention-empty"><ArrowsClockwise size={28} /><strong>正在读取待办…</strong></div> : lens === "focus" ? <FocusLens items={rankedItems} onOpen={onOpen} onDefer={onDefer} /> : lens === "control" ? <ControlLens items={rankedItems} counts={counts} onOpen={onOpen} onDefer={onDefer} /> : <BriefingLens briefing={briefing} onOpen={onOpen} />}</div>
   </section>;

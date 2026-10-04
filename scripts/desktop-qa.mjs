@@ -291,7 +291,8 @@ try {
     }
     artifactsScreenshot = path.join(root, "implementation-artifacts.png");
     await page.screenshot({ path: artifactsScreenshot, fullPage: false });
-    await page.getByLabel("更多 Mission 视图").selectOption("activity");
+    await page.getByLabel("更多 Mission 视图").click();
+    await page.getByRole("option", { name: "活动记录", exact: true }).click();
     await page.locator(".event-ledger").waitFor();
     const loadOlder = page.getByRole("button", { name: "Load 100 older events", exact: true });
     if (await loadOlder.count()) await loadOlder.click();

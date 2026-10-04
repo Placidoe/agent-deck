@@ -1,33 +1,78 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, ArrowsClockwise, FileCode, MagnifyingGlass } from "@phosphor-icons/react";
-import { outcomeGroups } from "./work-navigation.js";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowUpRight, ArrowsClockwise, CheckCircle, DownloadSimple, FileText, Folder, FolderOpen, MagnifyingGlass, Plus, ShareNetwork, X } from "@phosphor-icons/react";
+import { SelectControl } from "./SelectControl.jsx";
+import { PublishModal } from "./PublishModal.jsx";
+import "./workflow.css";
+const date = value => value ? new Date(value).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "未完成";
+const refFor = item => ({ missionId: item.missionId, artifactId: item.artifactId, folderId: item.folderId, file: item.file });
 
 export function ResultsHub({ desktop, onOpen }) {
-  const [missions, setMissions] = useState([]);
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const revision = useRef(0);
-  const load = useCallback(async () => {
-    if (!desktop?.missions?.list) return;
-    const request = ++revision.current;
-    setLoading(true);
-    try { const result = await desktop.missions.list(); if (request === revision.current) { setMissions(result); setError(""); } }
-    catch (error) { if (request === revision.current) setError(error.message); }
-    finally { if (request === revision.current) setLoading(false); }
-  }, [desktop]);
+  const [section, setSection] = useState("library"), [overview, setOverview] = useState({ folders: [], workspaces: [], reviews: [] });
+  const [folderId, setFolderId] = useState(""), [workspacePath, setWorkspacePath] = useState(""), [tab, setTab] = useState("files");
+  const [query, setQuery] = useState(""), [kind, setKind] = useState(""), [files, setFiles] = useState([]), [history, setHistory] = useState([]);
+  const [before, setBefore] = useState(null), [relativePath, setRelativePath] = useState("."), [offset, setOffset] = useState(null);
+  const [error, setError] = useState(""), [notice, setNotice] = useState(""), [loading, setLoading] = useState(false), [refresh, setRefresh] = useState(0);
+  const [sessionWork, setSessionWork] = useState(null), [sessions, setSessions] = useState([]), [newFolder, setNewFolder] = useState(false), [name, setName] = useState(""), [preview, setPreview] = useState(null), [publish, setPublish] = useState(null);
+  const revision = useRef(0), search = useDeferredValue(query), folder = overview.folders.find(item => item.id === folderId);
+  const load = useCallback(async () => { if (!desktop?.library) return; try { setOverview(await desktop.library.overview()); } catch (err) { setError(err.message); } }, [desktop]);
+  useEffect(() => { load(); let timer; const off = desktop?.missions?.onUpdate?.(() => { clearTimeout(timer); timer = setTimeout(() => { load(); setRefresh(n => n + 1); }, 600); }); return () => { clearTimeout(timer); off?.(); }; }, [load, desktop]);
   useEffect(() => {
-    load();
-    let timer;
-    const unsubscribe = desktop?.missions?.onUpdate?.(() => { clearTimeout(timer); timer = setTimeout(load, 600); });
-    return () => { revision.current++; clearTimeout(timer); unsubscribe?.(); };
-  }, [desktop, load]);
-  const groups = useMemo(() => outcomeGroups(missions, query), [missions, query]);
-  return <section className="results-hub">
-    <header><div><h1>成果</h1><p>按工作归集所有工作区的已登记产出。产出不代表已验收。</p></div><button onClick={load} disabled={loading} aria-label="刷新成果"><ArrowsClockwise size={16} /></button></header>
-    <label className="results-search"><MagnifyingGlass size={16} /><input placeholder="搜索工作名称或目标" aria-label="搜索成果" value={query} onChange={event => setQuery(event.target.value)} /></label>
-    {error && <p role="alert">{error}</p>}
-    <div className="outcome-collections">{groups.map(mission => <button key={mission.id} className="outcome-collection" onClick={() => onOpen(mission)}><span className="outcome-file"><FileCode size={24} /></span><div><h2>{mission.title}</h2><p>{mission.outcome}</p><small>{mission.counts.artifacts} 份登记产出<span>·</span>{mission.status === "completed" ? "工作已完成" : "查看验收状态"}<span>·</span>{mission.cwd?.split("/").pop()}</small></div><ArrowUpRight size={18} /></button>)}</div>
-    {!groups.length && <div className="product-empty"><FileCode size={30} /><h2>{loading ? "正在读取成果…" : query ? "没有匹配的成果" : "成果会出现在这里"}</h2><p>{!desktop ? "浏览器仅供预览。请在桌面 App 中查看真实产物。" : "Agent 发布产物后，可在这里进入预览、导出与来源记录。"}</p></div>}
+    if (!desktop?.library || section !== "library") return;
+    const request = ++revision.current; setLoading(true); setFiles([]); setBefore(null); setOffset(null); setError("");
+    const run = tab === "history" ? desktop.library.history({ folderId: folderId || null, workspacePath: workspacePath || null }) :
+      tab === "local" && folder?.rootPath ? desktop.library.browse({ folderId, file: relativePath }) :
+      desktop.library.files({ folderId: folderId || null, workspacePath: workspacePath || null, query: search, kind: kind || null });
+    run.then(result => { if (request !== revision.current) return; if (tab === "history") setHistory(result); else { setFiles(result.items); setBefore(result.nextBefore); setOffset(result.nextOffset); } }).catch(err => { if (request === revision.current) setError(err.message); }).finally(() => { if (request === revision.current) setLoading(false); });
+    return () => { revision.current++; };
+  }, [desktop, folderId, workspacePath, folder?.rootPath, tab, relativePath, search, kind, section, refresh]);
+  const chooseFolder = (id, root = false) => { setFolderId(id); setWorkspacePath(""); setRelativePath("."); setTab(root ? "local" : "files"); };
+  const act = async action => { setError(""); try { return await action(); } catch (err) { setError(err.message || String(err)); return null; } };
+  const more = async () => { const request = revision.current; setLoading(true); try {
+    const result = tab === "local" ? await desktop.library.browse({ folderId, file: relativePath, offset }) : await desktop.library.files({ folderId: folderId || null, workspacePath: workspacePath || null, query: search, kind: kind || null, before });
+    if (request === revision.current) { setFiles(current => { const rows = new Map(current.map(item => [item.key || item.file, item])); for (const item of result.items) { const key = item.key || item.file; if (!rows.has(key)) rows.set(key, item); } return [...rows.values()]; }); setBefore(result.nextBefore); setOffset(result.nextOffset); }
+  } catch (err) { if (request === revision.current) setError(err.message); } finally { if (request === revision.current) setLoading(false); } };
+  const previewFile = item => act(async () => { if (item.kind === "folder") { setRelativePath(item.file); return; } const result = await desktop.library.preview(refFor(item)); setPreview({ ...result, item }); });
+  const fileAction = (action, item) => act(async () => { const result = await desktop.library.action({ ...refFor(item), action }); if (action === "export" && result && !result.canceled) setNotice("文件已下载到你选择的位置。"); return result; });
+  const registerFolder = async event => { event.preventDefault(); const saved = await act(() => desktop.library.createFolder({ name, parentId: folderId && !folder?.rootPath ? folderId : null })); if (saved) { setNewFolder(false); setName(""); await load(); chooseFolder(saved.id); } };
+  const openSessions = item => act(async () => { const rows = await desktop.library.sessions({ missionId: item.id }); setSessions(rows); setSessionWork(item); });
+  const connect = async () => { const saved = await act(() => desktop.library.connect()); if (saved) { await load(); chooseFolder(saved.id, true); } };
+  useEffect(() => {
+    if (!publish && !preview && !newFolder && !sessionWork) return;
+    const previous = document.activeElement;
+    const dialog = document.querySelector(publish ? ".publish-modal" : preview ? ".library-preview" : newFolder ? ".workflow-small-modal" : ".session-history-modal");
+    const focusable = () => [...(dialog?.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),iframe,[tabindex="0"]') || [])].filter(element => element.getClientRects().length);
+    focusable()[0]?.focus();
+    const keydown = event => {
+      if (event.defaultPrevented || document.querySelector(".select-menu")) return;
+      if (event.key === "Escape") { event.preventDefault(); if (publish) setPublish(null); else if (preview) setPreview(null); else if (newFolder) setNewFolder(false); else setSessionWork(null); }
+      if (event.key === "Tab") { const items = focusable(), first = items[0], last = items.at(-1); if (event.shiftKey && (document.activeElement === first || !dialog?.contains(document.activeElement))) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && (document.activeElement === last || !dialog?.contains(document.activeElement))) { event.preventDefault(); first?.focus(); } }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => { document.removeEventListener("keydown", keydown); if (previous?.isConnected) previous.focus(); };
+  }, [Boolean(publish), Boolean(preview), newFolder, Boolean(sessionWork)]);
+  return <section className="results-hub library-hub">
+    <header><div><h1>成果</h1><p>交付有验收，文件有归处。登记即入库，不等于已通过验收。</p></div><button onClick={() => { load(); setRefresh(n => n + 1); }} aria-label="刷新成果"><ArrowsClockwise size={16} /></button></header>
+    <nav className="workflow-tabs" aria-label="成果视图"><button className={section === "library" ? "active" : ""} onClick={() => setSection("library")}><Folder size={16} />文档与资产</button><button className={section === "reviews" ? "active" : ""} onClick={() => setSection("reviews")}><CheckCircle size={16} />验收清单 <b>{overview.reviews.length}</b></button></nav>
+    {error && <p className="workflow-alert" role="alert">{error}<button onClick={() => setError("")} aria-label="关闭错误"><X size={14} /></button></p>}
+    {notice && <p className="workflow-notice" role="status">{notice}<button onClick={() => setNotice("")} aria-label="关闭提示"><X size={14} /></button></p>}
+    {!desktop?.library ? <div className="product-empty"><Folder size={30} /><h2>本地文档库需要桌面环境</h2><p>浏览器不会读取你的文件，也不会模拟执行结果。</p></div> : section === "reviews" ? <div className="review-inbox"><header><h2>等待你确认的交付</h2><small>未处理的产物仍在文档库中保留；下游任务不会绕过验收。</small></header>{overview.reviews.map(item => <button className="review-list-row" key={item.taskId} onClick={() => onOpen({ id: item.missionId, taskId: item.taskId, panel: "result", tab: "graph" })}><CheckCircle size={19} /><span><strong>{item.title}</strong><small>{item.workTitle} · {item.artifactCount} 份产物</small></span><time>{date(item.updatedAt)}</time><span className="review-row-action">查看并验收 <ArrowUpRight size={14} /></span></button>)}{!overview.reviews.length && <div className="product-empty"><CheckCircle size={30} /><h2>没有待验收的交付</h2><p>Worker 提交结果后，这里会显示真实验收记录。</p></div>}</div> : <div className="library-layout">
+      <aside className="library-sidebar"><header><strong>文件夹</strong><button onClick={() => setNewFolder(true)} aria-label="新建文件夹"><Plus size={16} /></button></header>
+        <button className={!folderId && !workspacePath ? "selected" : ""} onClick={() => chooseFolder("")}><FileText size={16} />全部登记产物</button>
+        {overview.folders.map(item => { let depth = 0, parent = item.parentId; const seen = new Set(); while (parent && !seen.has(parent)) { seen.add(parent); depth++; parent = overview.folders.find(p => p.id === parent)?.parentId; } return <button key={item.id} style={{ paddingLeft: 12 + Math.min(depth, 6) * 12 }} title={item.rootPath || item.name} className={folderId === item.id ? "selected" : ""} onClick={() => chooseFolder(item.id, Boolean(item.rootPath))}><Folder size={16} /><span>{item.name}</span>{item.rootPath && <small>本地</small>}</button>; })}
+        <button className="connect-folder" onClick={connect}><FolderOpen size={16} />关联已有文件夹</button>
+        <h3>工作区</h3>{overview.workspaces.map(item => <button key={item.path} title={item.path} className={workspacePath === item.path ? "selected" : ""} onClick={() => { chooseFolder(""); setWorkspacePath(item.path); }}><Folder size={15} /><span>{item.name}</span><small>{item.count}</small></button>)}
+      </aside>
+      <section className="library-content"><header className="library-content-header"><div><h2>{folder?.name || workspacePath?.split("/").pop() || "全部登记产物"}</h2><small>{folder?.rootPath || workspacePath || "文件保留在原工作区；分类不会移动或改写源文件。"}</small></div></header>
+        <nav className="library-subtabs" aria-label="文件夹内容">{folder?.rootPath && <button className={tab === "local" ? "active" : ""} onClick={() => setTab("local")}>本地文件</button>}<button className={tab === "files" ? "active" : ""} onClick={() => setTab("files")}>登记产物</button><button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>工作与会话记录</button></nav>
+        {tab === "history" ? <div className="library-history">{history.map(item => <article className="library-history-row" key={item.id}><button onClick={() => onOpen({ ...item, panel: "brief", tab: "graph" })}><span><strong>{item.title}</strong><small>{item.workspacePath}</small></span><time>{item.completedAt ? `完成于 ${date(item.completedAt)}` : "尚未完成"}</time><ArrowUpRight size={15} /></button><button className="history-sessions" onClick={() => openSessions(item)}>会话列表</button></article>)}{!history.length && <p className="library-empty">还没有关联的工作记录。完成记录按完成时间从新到旧排列。</p>}</div> : <>
+          {tab === "local" ? <div className="library-breadcrumb"><button disabled={relativePath === "."} onClick={() => setRelativePath(relativePath.split(/[\\/]/).slice(0, -1).join("/") || ".")}><ArrowLeft size={14} />上一级</button><span>{relativePath === "." ? "文件夹根目录" : relativePath}</span></div> : <div className="library-searchbar"><label><MagnifyingGlass size={15} /><input aria-label="搜索库中文件" value={query} onChange={e => setQuery(e.target.value)} placeholder="搜索文件、产物或任务" /></label><SelectControl aria-label="文件类型" value={kind} onChange={e => setKind(e.target.value)}><option value="">全部类型</option><option value="document">文档</option><option value="asset">资产与数据</option></SelectControl></div>}
+          <div className="library-table"><div className="library-table-heading"><span>文件名称</span><span>{tab === "local" ? "位置" : "来源 / 验收状态"}</span><span>操作</span></div>{files.map(item => { const file = tab === "local" ? { ...item, folderId } : item; return <article className="library-file-row" key={item.key || item.file}><button className="library-filename" onClick={() => previewFile(file)}>{item.kind === "folder" ? <Folder size={18} /> : <FileText size={18} />}<span><strong>{item.name}</strong><small>{tab === "local" ? item.kind : date(item.createdAt)}</small></span></button><div className="library-file-source"><span title={item.workTitle || item.file}>{item.workTitle || item.file}</span>{item.artifactId && <small>{item.verificationStatus === "user_verified" ? "已验收" : "已入库 · 未验收"}</small>}</div><div className="library-file-actions"><button onClick={() => fileAction("reveal", file)} title="在访达中显示"><FolderOpen size={15} /></button>{item.kind !== "folder" && <button onClick={() => fileAction("export", file)} title="下载文件"><DownloadSimple size={15} /></button>}{item.artifactId && <button title="查看来源工作" onClick={() => onOpen({ id: item.missionId, panel: "artifacts", tab: "artifacts" })}><ArrowUpRight size={15} /></button>}</div></article>; })}{!files.length && <p className="library-empty">{loading ? "正在读取…" : "这里暂时没有文件。可以关联已有文件夹，或把产物归入这个分类。"}</p>}{(before || offset != null) && <button className="library-more" disabled={loading} onClick={more}>{loading ? "读取中…" : "加载下一批"}</button>}</div>
+        </>}
+      </section>
+    </div>}
+    {sessionWork && <div className="workflow-modal-backdrop"><section className="workflow-small-modal session-history-modal" role="dialog" aria-modal="true" aria-label="来源会话列表"><header><h2>来源会话</h2><button onClick={() => setSessionWork(null)} aria-label="关闭会话列表"><X size={17} /></button></header><p>{sessionWork.title} · 按最近一轮结束时间排列</p><div>{sessions.map(item => <button key={item.threadId} onClick={() => onOpen({ id: sessionWork.id, taskId: item.taskId, panel: "conversation", tab: "graph" })}><span><strong>{item.title}</strong><small>{date(item.lastEndedAt)} · {item.threadId.slice(0, 16)}</small></span><ArrowUpRight size={14} /></button>)}{!sessions.length && <p>尚未创建真实会话，不会生成占位记录。</p>}</div></section></div>}
+    {newFolder && <div className="workflow-modal-backdrop"><form className="workflow-small-modal" onSubmit={registerFolder}><header><h2>新建文件夹</h2><button type="button" onClick={() => setNewFolder(false)} aria-label="关闭"><X size={17} /></button></header><p>{folder && !folder.rootPath ? `创建在「${folder.name}」内` : "创建文档分类，不改变源文件的位置。"}</p><input aria-label="文件夹名称" autoFocus maxLength={100} value={name} onChange={e => setName(e.target.value)} placeholder="例如：研究报告" /><button className="primary-button" disabled={!name.trim()}>创建</button></form></div>}
+    {preview && <div className="workflow-modal-backdrop"><section className="library-preview" role="dialog" aria-modal="true" aria-label="文件预览"><header><div><strong>{preview.title}</strong><small>只读预览 · 不执行脚本或联网</small></div><button onClick={() => fileAction("export", preview.item)} title="下载"><DownloadSimple size={16} /></button>{preview.item.artifactId && /\.(html?|md|txt)$/i.test(preview.item.file) && <button onClick={() => setPublish(preview.item)}><ShareNetwork size={15} />分享发布</button>}<button onClick={() => fileAction("open", preview.item)} title="在系统应用中打开"><ArrowUpRight size={16} /></button><button onClick={() => setPreview(null)} aria-label="关闭预览"><X size={18} /></button></header>{preview.mimeType === "text/html" ? <iframe title={preview.title} srcDoc={preview.content} sandbox="" referrerPolicy="no-referrer" /> : <pre>{preview.content}</pre>}{preview.item.artifactId && <footer><span>归入文件夹</span><SelectControl aria-label="归入文件夹" value={preview.item.folderId || ""} onChange={async e => { const saved = await act(() => desktop.library.assign({ fileKey: preview.item.key, folderId: e.target.value || null })); if (saved) { setPreview(current => ({ ...current, item: { ...current.item, folderId: saved.folderId } })); setRefresh(n => n + 1); } }}><option value="">未分类</option>{overview.folders.filter(item => !item.rootPath).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectControl><button onClick={() => onOpen({ id: preview.item.missionId, panel: "artifacts", tab: "artifacts" })}>查看来源工作 <ArrowUpRight size={14} /></button></footer>}</section></div>}
+    {publish && <PublishModal desktop={desktop} missionId={publish.missionId} artifact={{ id: publish.artifactId, files: [publish.file] }} initialFile={publish.file} onClose={() => setPublish(null)} onNotice={setNotice} />}
   </section>;
 }

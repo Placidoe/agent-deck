@@ -14,7 +14,8 @@ fs.writeFileSync(path.join(profile, "workspace.json"), JSON.stringify({ path: ro
 let app;
 try {
   const packagedApp = process.env.AGENT_DECK_QA_APP_PATH;
-  app = await electron.launch({ executablePath: packagedApp ? path.join(packagedApp, "Contents/MacOS/Agent Deck") : path.resolve(root, "../research/labs/grokbot-desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"), args: [...(packagedApp ? [] : [root]), `--user-data-dir=${profile}`, "--disable-gpu"], env: { ...process.env, CODEX_BINARY: "/no-codex-personal-qa" } });
+  const launchEnv = { ...process.env, CODEX_BINARY: "/no-codex-personal-qa" }; delete launchEnv.ELECTRON_RUN_AS_NODE;
+  app = await electron.launch({ executablePath: packagedApp ? path.join(packagedApp, "Contents/MacOS/Agent Deck") : path.resolve(root, "../research/labs/grokbot-desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"), args: [...(packagedApp ? [] : [root]), `--user-data-dir=${profile}`, "--disable-gpu"], env: launchEnv });
   const page = await app.firstWindow(); const errors = [];
   page.on("pageerror", err => errors.push(err.message));
   await page.getByRole("button", { name: "项目与记忆", exact: true }).click();
@@ -84,11 +85,11 @@ try {
   await page.getByText("还没有记忆。先留下一条真正有用的偏好。", { exact: true }).waitFor();
   await page.getByRole("button", { name: "返回工作", exact: true }).click();
   await page.getByRole("button", { name: /QA · 发布方案/ }).click();
-  await page.getByRole("button", { name: "生成计划", exact: true }).click();
+  await page.getByRole("button", { name: "开始做 · 拆解计划", exact: true }).click();
   await page.getByText(/Save and verify the model API/).waitFor();
   assert.equal(await page.getByText(/请先登录本机 Codex/).count(), 0);
   await page.getByRole("button", { name: "关闭提示", exact: true }).click();
-  await page.getByRole("button", { name: "生成计划", exact: true }).click();
+  await page.getByRole("button", { name: "开始做 · 拆解计划", exact: true }).click();
   await page.getByText(/Save and verify the model API/).waitFor();
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ ok: true, nativeWithoutCodex: true, projectMemoryCrud: true, acceptedRecovery: true, viewports: [1540,1120], screenshots }, null, 2));

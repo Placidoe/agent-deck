@@ -30,6 +30,18 @@ contextBridge.exposeInMainWorld("agentDeckDesktop", {
     update: (input) => ipcRenderer.invoke("requirements:update", input),
     claimNext: (input) => ipcRenderer.invoke("requirements:claim-next", input),
   },
+  library: {
+    overview: () => ipcRenderer.invoke("library:overview"),
+    files: input => ipcRenderer.invoke("library:files", input),
+    history: input => ipcRenderer.invoke("library:history", input),
+    sessions: input => ipcRenderer.invoke("library:sessions", input),
+    createFolder: input => ipcRenderer.invoke("library:create-folder", input),
+    assign: input => ipcRenderer.invoke("library:assign", input),
+    connect: () => ipcRenderer.invoke("library:connect"),
+    browse: input => ipcRenderer.invoke("library:browse", input),
+    preview: input => ipcRenderer.invoke("library:preview", input),
+    action: input => ipcRenderer.invoke("library:action", input),
+  },
   codex: {
     status: () => ipcRenderer.invoke("codex:status"),
     threads: (cwd) => ipcRenderer.invoke("codex:threads", cwd),

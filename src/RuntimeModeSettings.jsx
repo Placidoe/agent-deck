@@ -1,3 +1,4 @@
+import { SelectControl } from "./SelectControl.jsx";
 import { useEffect, useState } from "react";
 import "./runtime-mode.css";
 
@@ -26,9 +27,9 @@ export function RuntimeModeSettings({ desktop, providers = [], onChanged }) {
         <button type="button" key={mode} disabled={!settings || busy} aria-pressed={settings?.mode === mode} onClick={() => change({ mode })}><span>{label}</span><strong>{title}</strong><p>{detail}</p></button>
       )}
     </div>
-    {settings && <div className="runtime-mode-backend"><label htmlFor="runtime-backend">{native ? "模型 API" : "Coding Agent"}</label><select id="runtime-backend" disabled={busy} value={selectedId} onChange={(event) => change({ [native ? "modelProvider" : "externalProvider"]: event.target.value })}>
+    {settings && <div className="runtime-mode-backend"><label htmlFor="runtime-backend">{native ? "模型 API" : "Coding Agent"}</label><SelectControl id="runtime-backend" disabled={busy} value={selectedId} onChange={(event) => change({ [native ? "modelProvider" : "externalProvider"]: event.target.value })}>
       {providers.filter((provider) => native ? provider.kind === "api" : ["codex", "claude_code", "trae"].includes(provider.id)).map((provider) => <option key={provider.id} value={provider.id} disabled={provider.stage !== "mission_ready"}>{provider.label}{provider.stage !== "mission_ready" ? " · 适配中，尚不可执行" : ""}</option>)}
-    </select><p role="status">{busy ? "正在保存…" : selected?.missionEnabled ? "已就绪，新工作会使用这个引擎。" : native ? "请在下方配置并测试 API 连接，再从「工作」创建任务。不会回退到 Codex。" : "请连接所选 Coding Agent；未经验证的适配器不会启动任务。"}</p></div>}
+    </SelectControl><p role="status">{busy ? "正在保存…" : selected?.missionEnabled ? "已就绪，新工作会使用这个引擎。" : native ? "请在下方配置并测试 API 连接，再从「工作」创建任务。不会回退到 Codex。" : "请连接所选 Coding Agent；未经验证的适配器不会启动任务。"}</p></div>}
     {!desktop?.runtime && <p>执行模式设置需要桌面 App，浏览器预览不会启动 Agent。</p>}
     {error && <p className="runtime-mode-error" role="alert">{error}</p>}
   </section>;

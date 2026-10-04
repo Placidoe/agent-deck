@@ -6,6 +6,7 @@ const { MissionStore } = require("./mission-store.cjs");
 const { MissionOrchestrator } = require("./mission-orchestrator.cjs");
 const { WorktreeManager } = require("./worktree-manager.cjs");
 const { ArtifactService } = require("./artifact-service.cjs");
+const { LibraryService } = require("./library-service.cjs");
 const { PublisherService } = require("./publisher-service.cjs");
 const { ProviderRegistry } = require("./provider-registry.cjs");
 const { ApiAgentRuntime } = require("./api-agent-runtime.cjs");
@@ -18,6 +19,7 @@ let activeWorkspace = null;
 const codex = new CodexAppServer();
 let missionOrchestrator = null;
 let artifactService = null;
+let libraryService = null;
 let missionStore = null;
 let publisherService = null;
 let providerRegistry = null;
@@ -247,6 +249,20 @@ ipcMain.handle("requirements:create", (_event, input) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
   return missionOrchestrator.createRequirement(input || {});
 });
+for (const [channel, method] of [["library:overview", "overview"], ["library:files", "files"], ["library:history", "history"], ["library:sessions", "sessions"], ["library:create-folder", "createFolder"], ["library:assign", "assign"]]) {
+  ipcMain.handle(channel, (_event, input) => {
+    if (!missionStore?.library) throw new Error("文档库尚未就绪");
+    // Only the native directory picker may grant a filesystem root.
+    const payload = method === "createFolder" ? { name: input?.name, parentId: input?.parentId || null } : input || {};
+    return missionStore.library[method](payload);
+  });
+}
+for (const [channel, method] of [["library:connect", "connect"], ["library:browse", "browse"], ["library:preview", "preview"], ["library:action", "action"]]) {
+  ipcMain.handle(channel, (_event, input) => {
+    if (!libraryService) throw new Error("文档库尚未就绪");
+    return libraryService[method](input || {}, mainWindow);
+  });
+}
 ipcMain.handle("requirements:update", (_event, input) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
   return missionOrchestrator.updateRequirement(input?.id, input?.patch || {});
@@ -426,6 +442,7 @@ app.whenReady().then(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("provider:event", { runtimeMode: runtime === nativeHarness ? "agent_deck" : "external", ...event });
   });
   artifactService = new ArtifactService({ store: missionStore, dialog, shell, clipboard, downloadsPath: app.getPath("downloads") });
+  libraryService = new LibraryService({ store: missionStore, artifacts: artifactService, dialog, shell });
   publisherService = new PublisherService({ BrowserWindow, parentWindow: () => mainWindow });
   missionOrchestrator.on("update", (update) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("mission:update", update);

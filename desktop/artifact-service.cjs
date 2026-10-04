@@ -145,6 +145,11 @@ class ArtifactService {
     };
   }
 
+  inspectFile(input) {
+    const { mission, artifact } = this.#context(input);
+    return this.#metadata(mission, artifact, input.file);
+  }
+
   preview(input) {
     const { mission, artifact } = this.#context(input);
     const metadata = this.#metadata(mission, artifact, input.file);
@@ -278,7 +283,14 @@ class ArtifactService {
     });
     const candidate = path.isAbsolute(file) ? path.resolve(file) : path.resolve(task?.worktreePath || mission.integrationPath || mission.executionCwd || mission.cwd, file);
     const exists = fs.existsSync(candidate);
-    const authorizedCandidate = exists ? fs.realpathSync(candidate) : candidate;
+    let authorizedCandidate = candidate;
+    if (exists) authorizedCandidate = fs.realpathSync(candidate);
+    else {
+      // Resolve macOS path aliases while preserving containment for missing files.
+      let ancestor = path.dirname(candidate);
+      while (!fs.existsSync(ancestor) && ancestor !== path.dirname(ancestor)) ancestor = path.dirname(ancestor);
+      if (fs.existsSync(ancestor)) authorizedCandidate = path.resolve(fs.realpathSync(ancestor), path.relative(ancestor, candidate));
+    }
     if (!roots.some((root) => isWithin(root, authorizedCandidate))) throw new Error("Artifact path is outside the authorized mission workspace");
     const stat = exists ? fs.statSync(authorizedCandidate) : null;
     return {
