@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Deck · 项目背景评测协议</title>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#111419;color:#e1e6ef;font:15px/1.85 system-ui,-apple-system,sans-serif}main{max-width:1060px;margin:auto;padding:clamp(24px,5vw,56px)}h1{font-size:clamp(28px,4vw,36px);line-height:1.3;letter-spacing:-.8px}h2{font-size:23px;margin-top:36px}p,li{color:#abb6c7}a{color:#a9c9f5}small{color:#9aa9bd}code{font:13px/1.7 ui-monospace,monospace;overflow-wrap:anywhere}pre{background:#1c2531;padding:20px;border-radius:10px;white-space:pre-wrap}.notice{border-left:3px solid #7d9fce;padding:12px 20px;background:#1c2531}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:14px 10px;border-bottom:1px solid #323a47;text-align:left;vertical-align:top}.flow{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:24px 0}.flow div{border:1px solid #3b4657;border-radius:10px;padding:18px;background:#191f28}.flow p{margin:8px 0 0}.wide{grid-column:1/-1}footer{border-top:1px solid #323a47;margin-top:36px;padding-top:20px}@media(max-width:650px){.flow{grid-template-columns:1fr}.wide{grid-column:auto}td,th{min-width:130px}}@media print{body{background:white;color:black}p,li{color:#333}.notice,.flow div,pre{background:#eee}}</style></head><body><main>
+<small>PERSONAL AGENT · 第三阶段 / 评测基础设施 · 2026-10-04</small>
+<h1>先证明项目背景有用，再继续加功能</h1>
+<p>这一步，我把“持续理解你的项目”拆成可以验证的行为：跟得上新条件、不把草稿说成完成、知道什么时候证据不足。比较的不是两个不同的 Agent，而是同一自有 Harness 在有、无授权项目背景时的表现。</p>
+<aside class="notice"><strong>当前状态：可以复现，真实模型尚未测</strong><p>用例、独立执行与复核、Token 记录、合同评分和 HTML 报告已实现。固定响应测试只验证工程链路。当前桌面没有已保存并验证的模型 API，所以未发送真实模型请求，没有质量或速度提升结论。</p></aside>
+<h2>三类用例，分别检查什么</h2><div class="scroll"><table><thead><tr><th>用例</th><th>有冲突的背景</th><th>本轮应该做到</th></tr></thead><tbody>
+<tr><td>P1 · 新条件覆盖旧决策</td><td>过去偏好 Alpha；新要求必须完全离线</td><td>按新资料选择 Beta，保留预算与报价依据，说明长期稳定性未验证</td></tr>
+<tr><td>P2 · 诚实的项目周报</td><td>过去预计全部完成；新账本只有 2/3 项人工验收</td><td>下一步是审阅 W3，不宣称完成、不重新执行 W1/W2</td></tr>
+<tr><td>P3 · 不编造性能排名</td><td>旧版本有 20ms；新版本没有同口径时延，旧英文偏好已撤销</td><td>缺失时延留 null，不能强行排名；中文报告说明需要同口径测试</td></tr>
+</tbody></table></div><p>产品、价格、项目状态和历史验收种子均为合成资料。评分标准公开，但标准答案对象不进入模型请求；两组都能读到相同的新资料与历史文件。</p>
+<h2>对照架构</h2><section class="flow" aria-label="项目背景评测架构图">
+<div class="wide"><strong>同一用例、最新请求、源文件 SHA-256 与模型 ↓</strong><p>固定版本的测试材料。不使用你的真实项目、记忆、对话或私有文件。</p></div>
+<div><strong>对照组：普通任务 ↓</strong><p>可自行读取 brief.txt 与 prior-notes.txt；没有项目背景块。</p></div>
+<div><strong>实验组：授权项目背景 ↓</strong><p>用同源历史事实生成真实项目上下文；包含已确认、选择共享的记忆与合成已验收摘要。撤销的记忆不进入背景。</p></div>
+<div class="wide"><strong>同一 NativeHarnessRuntime → Executor → 新鲜只读 Auditor ↓</strong><p>相同工具、模型、输出要求与权限。不增加队友，不换模型。仅自动批准隔离工作区 report.html 写入；网页、命令和 Git 均不开放。</p></div>
+<div><strong>宿主观测 ↓</strong><p>模型请求与阶段时长、Provider 返回的 Token、来源回执、同阶段同范围重复读取、原资料是否改变。</p></div>
+<div><strong>合同评分 + 未完成的人工审阅 ↓</strong><p>决策、事实、可见内容、限制、来源、实际新资料读取与基础 HTML 检查。分数不是审美、事实一致性或用户满意度的证明。</p></div>
+<div class="wide"><strong>每次尝试保存 JSON / HTML → 人工检查 → 根据失败再改进</strong><p>失败不会删除或挑掉。只给双方通过、模型 / SDK / Endpoint / 来源 / 请求一致的配对计算耗时与 Token 比。</p></div>
+</section>
+<h2>怎么开始</h2><ol><li>在 Agent Deck「设置 → 执行引擎」保存并验证模型 API。密钥仍由现有系统安全存储管理；不要发到聊天里。</li><li>先生成协议与元数据检查报告：不解密密钥，也不会发送请求。</li></ol>
+<pre><code>npm run eval:personal:plan
+npm run eval:personal:preflight</code></pre>
+<p>进入真实调用必须显式选择 live；先做 P1 的一组配对。它会调用现有自有 Harness，不会启动 Codex，或偷偷迁移已有 Mission。</p>
+<pre><code>npm run eval:personal:live
+# 完整探索：3 个用例，各重复 3 次，共 18 次尝试
+npm run eval:personal:live -- --cases P1,P2,P3 --repeats 3 --max-calls 128 --max-tokens 100000</code></pre>
+<p>输出在仓库的 <code>qa/personal-evals/</code> 中，每次使用全新目录；命令返回本次 <code>report.html</code> 的绝对路径。真实运行报告位于批次的 <code>runs/</code> 下。JSON 保存全部尝试和请求级观测；HTML 提供隔离的产物预览，不直接执行模型生成的脚本。</p>
+<p>默认整个批次最多 48 次模型请求、40,000 个已报告 Token；单轮仍沿用 Harness 的时间 / 轮数边界。预算在下一次请求前检查，已经发生的最后一次请求可能超过 Token 阈值；缺失用量时不能保证精确 Token 上限，但请求次数仍受限。这是费用约束的探索评测，不是完全免费或固定价格的操作。</p>
+<h2>指标的口径</h2><div class="scroll"><table><thead><tr><th>指标</th><th>记录什么</th><th>不代表什么</th></tr></thead><tbody>
+<tr><td>总耗时</td><td>执行、受限写入批准和独立复核的宿主墙钟时间；请求级时长可定位执行 / 复核开销</td><td>不是纯模型推理时长，不含真实用户审阅与等待</td></tr>
+<tr><td>真实 Token</td><td>只有每次响应都提供一致的输入、输出、总量，才汇总完整值；缺失或部分报告留空，已知部分单独保存</td><td>不是按字符估算，不等于账单金额，也不推测缓存优惠或内部思考成本</td></tr>
+<tr><td>合同检查 / 100</td><td>8 分结构、16 分决策、24 分事实、8 分可见决策与数值、10 分限制、10 分来源、10 分新资料读取、7 分可读文档、7 分离线基础检查</td><td>不是完整语义事实核验；HTML 检查不是安全沙箱证明，预览仍强制隔离</td></tr>
+<tr><td>重复读取</td><td>同一执行 / 复核阶段、同一路径与行范围的重复 reference_read</td><td>不同范围分页不算重复；新鲜 Auditor 的独立读取不算 Executor 冗余</td></tr>
+<tr><td>人工注意力</td><td>每次真实权限请求、评测自动处理数量与拒绝操作</td><td>自动批准不等于实际用户零负担；人工编辑次数和盲审质量尚未测</td></tr>
+</tbody></table></div>
+<h2>怎样避免过早宣布成功</h2><p>每个用例轮换两组执行顺序，记录失败与不完整配对。少量配对容易受缓存、网络和服务负载影响，不做统计显著性或普遍胜出的宣称。下一轮要拿真实草稿进行人工盲审，检查正文与 JSON 是否一致、是否自然易读、需要多少修改。</p><p>如果背景组更慢或消耗更多，我们就用请求记录查背景冗余、历史读取和审阅开销；如果合同不通过，先看是资料遗漏、旧结论覆盖新条件，还是工具失败。不以修改评分规则、隐藏失败或换更强模型来制造收益。</p>
+<footer><a href="personal-tools.html">受控工具与来源证据 →</a> · <a href="personal-agent-foundation.html">项目与记忆基础 →</a></footer>
+<script type="application/json" id="agent-deck-data">{"stage":"personal-agent-evaluation","date":"2026-10-04","cases":["P1","P2","P3"],"comparison":"authorized-project-context-vs-no-context","liveModelEvaluated":false,"codexComparison":false,"humanReviewPerformed":false,"fixturesAreSynthetic":true}</script>
+</main></body></html>
