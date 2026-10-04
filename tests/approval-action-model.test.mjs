@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { actionCanBeDecided, actionTimeline, normalizeApprovalAction } from "../src/approval-action-model.js";
+import { actionCanBeDecided, actionTimeline, normalizeApprovalAction, pendingMissionApproval } from "../src/approval-action-model.js";
 
 test("normalizes a legacy API command approval without claiming it ran", () => {
   const action = normalizeApprovalAction({ requestId: "r-1", method: "item/commandExecution/requestApproval", reason: "API Worker wants to run: npm test", command: "npm test", item: { id: "call-1", tool: "workspace_bash" } });
@@ -36,4 +36,18 @@ test("normalizes a Git approval operation for the same action panel", () => {
   assert.equal(action.tool, "workspace_git");
   assert.equal(action.operation, "stage");
   assert.equal(actionCanBeDecided(action), true);
+});
+
+test("public page approval shows its exact URL, not a file write", () => {
+  const action = normalizeApprovalAction({ requestId: "web-1", item: { tool: "public_web_read", url: "https://example.com/report" } });
+  assert.equal(action.url, "https://example.com/report");
+  assert.equal(action.path, "");
+  assert.equal(actionCanBeDecided(action), true);
+});
+
+test("pending approval excludes already resolved requests independent of event order", () => {
+  const events = [{ seq: 1, taskId: "t", type: "provider.item/fileChange/requestApproval", payload: { requestId: "old" } }, { seq: 2, taskId: "t", type: "provider.item/approval/resolved", payload: { requestId: "old" } }, { seq: 3, taskId: "t", type: "provider.item/tool/requestApproval", payload: { requestId: "web" } }];
+  assert.equal(pendingMissionApproval(events, "t").payload.requestId, "web");
+  assert.equal(pendingMissionApproval([...events].reverse(), "t").payload.requestId, "web");
+  assert.equal(pendingMissionApproval(events, "other"), undefined);
 });

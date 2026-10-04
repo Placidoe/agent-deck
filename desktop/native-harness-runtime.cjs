@@ -4,13 +4,16 @@ const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const { stripPersonalContext } = require("./personal-context.cjs");
 const { ApiAgentRuntime, tools } = require("./api-agent-runtime.cjs");
+const { referenceTools, webTool, readReference, listReferences, assertResearchOutputPath, validatePublicUrl, readPublicPage } = require("./personal-tools.cjs");
 
 // Deliberately separate from legacy API turns: SDK owns the Manager/Executor/
 // Auditor state machine, not Codex and not ApiAgentRuntime.#run.
 class NativeHarnessRuntime extends ApiAgentRuntime {
-  constructor({ rootDirectory, ...options }) {
+  constructor({ rootDirectory, publicPageReader = readPublicPage, ...options }) {
     super(options);
     this.rootDirectory = rootDirectory;
+    this.publicPageReader = publicPageReader;
+    this.webGrants = new WeakMap(); // One turn only; never persists across restart.
     this.sdk = import(pathToFileURL(path.join(__dirname, "harness-core/portable.js")).href);
     this.sdk.catch(() => {}); // Surface a missing packaged SDK at createThread, not as an unhandled startup rejection.
   }
@@ -28,8 +31,11 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
   }
   async createThread(input) {
     await this.sdk; // Missing SDK must fail before claiming a thread was created.
+    const referenceRoot = input.referenceRoot ? fs.realpathSync(input.referenceRoot) : null;
+    if (referenceRoot && !fs.statSync(referenceRoot).isDirectory()) throw new Error("Choose a readable research source folder");
     const created = await super.createThread(input);
     const thread = this.threads.get(created.thread.id);
+    thread.referenceRoot = referenceRoot;
     thread.endpoint = thread.profile.endpoint;
     this.#save(thread);
     return created;
@@ -68,6 +74,50 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
     if (active?.done) await active.done;
     return this.sendTurn({ threadId, prompt: previous?.prompt ? `${stripPersonalContext(previous.prompt)}\n\nUSER REDIRECTION (supersedes conflicting earlier instructions):\n${prompt}` : prompt, outputSchema: previous?.outputSchema });
   }
+  async executeControlledTool(input) {
+    if (input.thread.referenceRoot) {
+      if (["workspace_bash", "workspace_git"].includes(input.name)) return { ok: false, text: "Research sessions cannot run commands or Git tools; use read-only source tools and approved document writes" };
+      if (input.name === "workspace_write") {
+        try { assertResearchOutputPath(input.thread.cwd, input.args.path); }
+        catch (error) { return { ok: false, text: `Tool error: ${error.message}` }; }
+      }
+    }
+    return super.executeControlledTool(input);
+  }
+  async executePersonalTool({ thread, turn, name, args, signal }) {
+    const network = name === "public_web_read";
+    const item = { id: `tool-${randomUUID()}`, type: network ? "webRead" : "mcpToolCall", tool: name, server: "agent-deck-personal", url: network ? args.url : undefined, path: !network ? args.path : undefined, approvalRequired: network, state: network ? "requested" : "executing" };
+    const emit = (method, extra = {}) => this.emit("event", { method, params: { threadId: thread.id, turnId: turn.id, item: { ...item }, ...extra } });
+    emit("item/started");
+    let result;
+    try {
+      signal?.throwIfAborted();
+      if (!thread.referenceRoot) throw new Error("Personal source tools are only enabled for research sessions with a selected source folder");
+      let text;
+      if (network) {
+        if (!thread.allowMutations) throw new Error("Public web access is available in an approved research worker, not the planning phase");
+        const url = validatePublicUrl(args.url); item.url = url;
+        let granted = this.webGrants.get(turn);
+        if (!granted) { granted = new Set(); this.webGrants.set(turn, granted); }
+        if (!granted.has(url)) {
+          item.state = "requested";
+          const decision = await this.requestControlledApproval({ thread, turn, item, signal, reason: `读取公开网页：${url}。网站会收到你的网络请求；不携带登录信息，仅批准本轮读取这个 URL（含独立复核），不允许跳转、发布或发送资料。` });
+          signal?.throwIfAborted();
+          if (decision !== "accept") { item.state = "declined"; throw new Error("网页访问已拒绝；没有发出网络请求。可提供本地资料或改用其他来源。"); }
+          granted.add(url);
+        }
+        item.state = "executing"; emit("item/execution/started");
+        text = await this.publicPageReader(url, { signal });
+      } else if (name === "reference_read") text = readReference(thread.referenceRoot, args);
+      else if (name === "reference_list") text = listReferences(thread.referenceRoot, args);
+      else throw new Error("Unsupported personal tool");
+      result = { text, ok: true }; item.source = JSON.parse(text).source; item.state = "executed";
+    } catch (error) { result = { text: `Tool error: ${error.message}`, ok: false }; if (item.state !== "declined") item.state = "failed"; }
+    item.result = result.text; item.status = result.ok ? "completed" : item.state;
+    turn.items.push(item); this.#save(thread); emit("item/completed");
+    signal?.throwIfAborted();
+    return result;
+  }
   async #drive(thread, turn, prompt, outputSchema) {
     const active = this.turns.get(turn.id);
     const deadline = new AbortController();
@@ -96,10 +146,13 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
         if (!message || message.role !== "assistant") throw new Error("Model API returned no assistant message");
         return message;
       } };
-      const controlled = tools.filter((tool) => thread.allowMutations || !["workspace_write", "workspace_bash", "workspace_git"].includes(tool.function.name)).map((definition) => {
+      const controlled = tools.filter((tool) => (!thread.referenceRoot || !["workspace_bash", "workspace_git"].includes(tool.function.name)) && (thread.allowMutations || !["workspace_write", "workspace_bash", "workspace_git"].includes(tool.function.name))).map((definition) => {
         const name = definition.function.name;
         return { definition, readOnly: ["workspace_read", "workspace_list", "workspace_search"].includes(name), execute: (args, signal) => this.executeControlledTool({ thread, turn, name, args, signal }) };
       });
+      if (thread.referenceRoot) for (const definition of [...referenceTools, ...(thread.allowMutations ? [webTool] : [])]) {
+        controlled.push({ definition, readOnly: true, execute: (args, signal) => this.executePersonalTool({ thread, turn, name: definition.function.name, args, signal }) });
+      }
       const adapters = createModelAdapters({ client, tools: controlled, maxToolRounds: 8, maxContextChars: 96000,
         planningOnly: !thread.allowMutations && Boolean(outputSchema),
         ...(outputSchema ? { outputInstruction: `Return only JSON conforming to: ${JSON.stringify(outputSchema)}`, verifyOutput: (text) => validateOutput(text, outputSchema) } : {}),

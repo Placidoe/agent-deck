@@ -284,10 +284,19 @@ class ApiAgentRuntime extends EventEmitter {
     return body;
   }
 
-  #requestApproval({ threadId, turn, item, args }) {
+  requestControlledApproval({ thread, turn, item, reason, signal }) {
+    return new Promise((resolve, reject) => {
+      const abort = () => { for (const id of [...turn.approvalIds]) this.resolveApproval({ requestId: id, decision: "interrupt" }).catch(() => {}); };
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) { signal.removeEventListener("abort", abort); reject(signal.reason); return; }
+      this.#requestApproval({ threadId: thread.id, turn, item, args: {}, reason }).then(resolve, reject).finally(() => signal?.removeEventListener("abort", abort));
+    });
+  }
+
+  #requestApproval({ threadId, turn, item, args, reason: customReason }) {
     const requestId = `api-approval-${randomUUID()}`;
-    const kind = item.type === "commandExecution" ? "item/commandExecution/requestApproval" : item.type === "gitOperation" ? "item/gitOperation/requestApproval" : "item/fileChange/requestApproval";
-    const reason = item.type === "commandExecution" ? `API Worker wants to run: ${args.command}` : item.type === "gitOperation" ? `API Worker wants to ${args.operation}${args.message ? `: ${args.message}` : ""}` : `API Worker wants to write: ${args.path}`;
+    const kind = item.type === "webRead" ? "item/tool/requestApproval" : item.type === "commandExecution" ? "item/commandExecution/requestApproval" : item.type === "gitOperation" ? "item/gitOperation/requestApproval" : "item/fileChange/requestApproval";
+    const reason = customReason || (item.type === "commandExecution" ? `API Worker wants to run: ${args.command}` : item.type === "gitOperation" ? `API Worker wants to ${args.operation}${args.message ? `: ${args.message}` : ""}` : `API Worker wants to write: ${args.path}`);
     return new Promise((resolve) => {
       const approval = { requestId, threadId, turnId: turn.id, turn, item, resolve };
       this.approvals.set(requestId, approval);

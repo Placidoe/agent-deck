@@ -45,6 +45,7 @@ export function normalizeApprovalAction(input = {}) {
   const state = normalizeState(first(input.state, input.lifecycleState, input.status, source.state, source.lifecycleState, source.status));
   const command = first(source.command, proposed.command, input.command);
   const path = first(source.path, proposed.path, input.path);
+  const url = first(source.url, proposed.url, input.url);
   const operation = first(source.operation, proposed.operation, input.operation);
   const tool = first(source.tool, proposed.tool, input.tool, command ? "workspace_bash" : path ? "workspace_write" : "controlled action");
   const summary = first(source.summary, source.reason, input.summary, input.reason, command ? `Run: ${command}` : path ? `Write: ${path}` : "The worker proposed a controlled action.");
@@ -60,6 +61,7 @@ export function normalizeApprovalAction(input = {}) {
     risk: risk ? String(risk) : "",
     command: command ? String(command) : "",
     path: path ? String(path) : "",
+    url: url ? String(url) : "",
     operation: operation ? String(operation) : "",
     tool: String(tool),
     decision: first(input.decision, decision.value, decision.decision, source.decisionValue, source.decision),
@@ -91,4 +93,10 @@ export function actionTimeline(action) {
 
 export function actionCanBeDecided(action) {
   return normalizeApprovalAction(action).state === "requested";
+}
+
+export function pendingMissionApproval(events = [], taskId) {
+  const related = events.filter(event => event.taskId === taskId).sort((a, b) => b.seq - a.seq);
+  const resolved = new Set(related.filter(event => event.type === "provider.item/approval/resolved").map(event => event.payload?.requestId));
+  return related.find(event => ["provider.item/commandExecution/requestApproval", "provider.item/fileChange/requestApproval", "provider.item/gitOperation/requestApproval", "provider.item/tool/requestApproval"].includes(event.type) && !resolved.has(event.payload?.requestId || event.payload?.id));
 }

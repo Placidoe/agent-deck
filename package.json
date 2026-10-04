@@ -24,6 +24,8 @@
     "test:native-harness": "node --test tests/native-harness.test.mjs",
     "test:personal": "ELECTRON_RUN_AS_NODE=1 ../research/labs/grokbot-desktop/node_modules/.bin/electron --test tests/personal-agent.test.mjs",
     "test:personal-ui": "node scripts/personal-agent-qa.mjs",
+    "test:personal-tools": "ELECTRON_RUN_AS_NODE=1 ../research/labs/grokbot-desktop/node_modules/.bin/electron --test tests/personal-tools.test.mjs tests/approval-action-model.test.mjs",
+    "test:personal-tools-ui": "node scripts/personal-tools-qa.mjs",
     "harness:sync": "npm --prefix ../agent-deck-harness-core run build && node scripts/vendor-harness.mjs",
     "test:attention-policy": "node --test tests/attention-policy.test.mjs",
     "test:api-runtime": "node --test tests/api-agent-runtime.test.mjs",

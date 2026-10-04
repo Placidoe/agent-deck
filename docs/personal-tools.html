@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agent Deck · 受控资料与网页</title>
+<style>body{margin:0;background:#111419;color:#dee4ed;font:15px/1.8 system-ui,-apple-system,sans-serif}main{max-width:1000px;margin:auto;padding:52px 28px}h1{font-size:34px;line-height:1.3;letter-spacing:-1px}h2{margin-top:36px;font-size:23px}p,li{color:#acb6c5}a{color:#9cbdee}small{color:#8290a2}code{font:13px/1.6 ui-monospace,monospace;color:#adcaec;overflow-wrap:anywhere}pre{padding:20px;background:#1b222c;border-radius:10px;white-space:pre-wrap}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:13px 10px;border-bottom:1px solid #313946;text-align:left;vertical-align:top}.scroll{overflow:auto}.flow{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:24px 0}.node{border:1px solid #374353;border-radius:10px;background:#1b222c;padding:18px}.node p{margin:8px 0 0}.wide{grid-column:1/-1}.notice{border-left:3px solid #7d9cc8;padding:12px 20px;background:#1c2531}footer{margin-top:40px;border-top:1px solid #313946;padding-top:20px}@media(max-width:650px){main{padding:26px 18px}.flow{grid-template-columns:1fr}.wide{grid-column:auto}h1{font-size:27px}}</style></head><body><main>
+<small>PERSONAL AGENT · 第二阶段 / BETA · 2026-10-04</small><h1>有来源的草稿，而不是凭空生成的结论</h1>
+<p>这一步，我先补上一个具体能力：让自有 Harness 读取你选定的资料，以及逐个批准的公开网页，生成 HTML 草稿。来源、产物和权限分开管理；你能看到它读过什么，再决定是否验收。</p>
+<aside class="notice"><strong>实际状态</strong><p>受控工具、桌面批准和来源回执已实现。隔离端到端用例通过；匿名 HTTPS 真实访问已做基础冒烟。尚未完成真实模型端到端质量、速度与 Token 对照评测，不能据此宣称超过 Codex。</p></aside>
+<h2>怎么用</h2><ol><li>在<strong>设置 → 执行引擎</strong>选择 <strong>Agent Deck Harness</strong>，保存并验证模型 API 配置。</li><li>新建工作，选择<strong>调研与文档</strong>，将工作区设为准备好的资料文件夹。目录必须只包含愿意提供给所选模型服务的材料；不要选整个个人目录。</li><li>需求里说明要读取的相对路径、你关心的问题和需要核验的公开 HTTPS 地址。确认计划后，Worker 在独立成果工作区执行；不会修改资料目录，也不会在其中初始化 Git。</li><li>网页访问发生前，检查地址，点击<strong>批准本轮读取</strong>或<strong>不访问</strong>。批准一个地址不会授权另一个地址；新一轮执行仍须重新批准。</li><li>写入 HTML 仍须通过受控文件操作批准。完成后到 Worker 的<strong>证据 → 读取过的来源</strong>检查回执，到<strong>产物</strong>查看报告，再人工验收。</li><li>把工作关联到个人项目后，只有已验收摘要才会参与下次背景复用；未验收草稿不会自动变成可信记忆。</li></ol>
+<pre><code>读取选定目录里的 brief.txt，比较方案 A 和 B。
+补充核查 https://example.com/ 上的公开说明；不要扩大访问范围。
+交付 decision.html：区分来源事实、推断和未验证信息，
+保留来源路径或 URL，并说明读取不完整的部分。
+只制作草稿，不发布、不发消息，也不修改原始资料。</code></pre>
+<p><small>上面的 example.com 仅用于连通性示例，没有真实方案资料。实际任务应使用你提供的一手来源。</small></p>
+<h2>架构与权限边界</h2><section class="flow" aria-label="受控个人工具架构图">
+<div class="node wide"><strong>工作目标 + 已授权背景 ↓</strong><p>项目和记忆仍使用同一份账本。工作启动时固定来源目录与执行方式，模型不能通过提示词自行扩大授权。</p></div>
+<div class="node"><strong>只读资料目录 → reference_list / reference_read</strong><p>宿主校验相对路径、符号链接、文件类型和大小。返回编号摘录、时间和整份读取文件的 SHA-256；原目录不是产物工作区。</p></div>
+<div class="node"><strong>单个公开 URL → 人工批准 → public_web_read</strong><p>宿主检查 HTTPS 与公网 DNS，固定公网 IPv4 后建立连接。没有 Cookie、账号密码或浏览器登录状态；不跟随跳转、不执行脚本。</p></div>
+<div class="node wide"><strong>独立 Harness SDK：Executor → 新鲜 Auditor ↓</strong><p>宿主提供受限工具，SDK 负责有预算的执行与独立只读复核。来源是引用数据，不是命令；回执说明读到什么，不证明来源真实或结论正确。</p></div>
+<div class="node"><strong>managed worktree → 文件批准 → HTML 草稿</strong><p>原有写入边界不放宽；HTML 预览继续隔离脚本和网络。资料目录不被初始化、提交或自动导入。</p></div>
+<div class="node"><strong>真实事件 → 证据页 → 人工验收 → 下次复用</strong><p>展示当前已加载的、属于此 Worker 的读取回执。验收不是自动步骤；来源和草稿不会自动写进用户记忆。</p></div>
+</section>
+<h2>这一版支持与不支持什么</h2><div class="scroll"><table><thead><tr><th>能力</th><th>边界</th><th>失败时怎么做</th></tr></thead><tbody>
+<tr><td>本地资料</td><td>UTF-8 文本 / HTML / CSV / JSON；单文件最多 256 KiB；一次最多 501 行、约 4,500 字符摘录；工具 JSON 回执最多 5,800 字符</td><td>导出较小的 UTF-8 文本；需要更多内容时按行继续读取</td></tr>
+<tr><td>目录浏览</td><td>只列一层、最多 80 项；隐藏文件、符号链接和明显的凭据文件排除</td><td>指定允许的子目录；不会自动遍历整台电脑</td></tr>
+<tr><td>公开网页</td><td>HTTPS / 443、公开域名、公网 IPv4；无查询参数和片段；最多 256 KiB、15 秒；UTF-8 文本型内容</td><td>提供规范地址；页面要求登录、跳转、压缩响应或 JS 渲染时会说明不支持，不偷偷换通道</td></tr>
+<tr><td>来源证据</td><td>URL / 相对路径、时间、范围、SHA-256、截断状态。哈希对应下载或文件字节，不是对事实正确性的担保</td><td>继续读取、交叉核验；事件分页未加载的历史来源不在当前列表中</td></tr>
+<tr><td>暂不支持</td><td>全网搜索、PDF / Office 解析、登录网站、IPv6-only 站点、自动发布、后台长期授权。自有调研会话不开放 Shell / Git 工具，也不能写隐藏文件或版本元数据</td><td>先手动导出资料或明确提供可支持的地址，不绕过站点访问限制；代码测试请使用代码开发模式</td></tr>
+</tbody></table></div>
+<h2>隐私与安全：不夸大保障</h2><p>本地读取到的摘录会进入你配置的模型服务请求。文件名过滤和内容凭据检测只是额外防线，不能保证识别所有秘密；请先挑选和脱敏资料。路径、打开描述符和符号链接校验也不是针对恶意并发文件系统攻击的正式沙箱证明。</p><p>公开网页的服务器会看到请求来源 IP、路径和固定 User-Agent。批准仅覆盖当前轮次的同一 URL（含独立复核），不覆盖其他 URL、上传、登录或发布。来源里的提示注入可能影响模型判断，因此宿主权限校验不能交给模型；系统提示词只能增强边界，不能提供绝对防护。</p><p>现有已经创建的旧会话不会被悄悄追加资料访问权限。请用新工作体验这条自有 Harness 路径；外部 Agent 模式仍保持原有能力，不假装统一实现了这些宿主工具。</p>
+<h2>怎么验证效果</h2><div class="scroll"><table><thead><tr><th>验证</th><th>证据</th><th>不能推导什么</th></tr></thead><tbody>
+<tr><td>回归</td><td>应用 106 项、SDK 21 项、网站交付 4 项通过；覆盖来源隔离、DNS / 网络边界、拒绝与取消、连续批准、人工验收后复用、隐藏输出与 Shell / Git 限制</td><td>测试通过不等于所有网站兼容、所有安全风险消失</td></tr>
+<tr><td>真实桌面</td><td>隔离 Electron 实例，真实 SDK / 本地工具 / SQLite / 原有批准接口；固定模型和页面 fixture；1540×960、1120×720 检查网页批准与证据展示</td><td>固定 fixture 不是线上模型评测，也不是实际用户运行记录</td></tr>
+<tr><td>匿名网络冒烟</td><td>本阶段匿名读取 https://example.com：HTTP 200，577 字节，SHA-256 25ddf2c883e0d1958ea971d279a7e4f0fd446724ee3db7db19dadabd4a62e484</td><td>一次站点连通不能证明整条真实模型任务已经完成</td></tr>
+</tbody></table></div>
+<h2>下一步：用真实任务检验，而不是继续堆功能</h2><ol><li>固定一个持续调研与决策场景，用相同来源和模型完成真实 API 端到端运行。</li><li>比较有 / 无项目背景：真实 Token、总耗时、重复读取、遗漏和人工修改次数。</li><li>根据失败记录改进检索、工具错误提示和报告质量，稳定后再扩展格式与授权策略。</li></ol>
+<footer><a href="personal-agent-foundation.html">项目与记忆基础 →</a> · <a href="runtime-modes.html">两种执行方式 →</a></footer>
+<script type="application/json" id="agent-deck-data">{"stage":"personal-tools","date":"2026-10-04","status":"beta","mode":"agent_deck","referenceReadOnly":true,"webApprovalScope":"exact_url_current_turn","liveModelEvaluated":false,"appRegressionTests":106,"sdkTests":21,"sitesTests":4,"maxSourceBytes":262144,"maxExcerptChars":4500}</script>
+</main></body></html>

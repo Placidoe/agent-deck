@@ -224,7 +224,7 @@ function eventPatch(session, event) {
       messages: completeAssistant(session.messages), timeline: [...session.timeline, failed ? "Turn failed" : interrupted ? "Turn interrupted" : "Turn completed"].slice(-30),
     };
   }
-  if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval" || method === "item/gitOperation/requestApproval" || method === "action/requested") {
+  if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval" || method === "item/gitOperation/requestApproval" || method === "item/tool/requestApproval" || method === "action/requested") {
     const action = params.action || params.lifecycle || params.approval || params;
     return { status: "attention", approval: { requestId: event.id || action.requestId || action.id, method, state: "requested", requestedAt: params.requestedAt || event.timestamp || new Date().toISOString(), ...params, action }, summary: params.reason || action.summary || (params.command ? `Approval required: ${params.command}` : "Codex needs your approval.") };
   }

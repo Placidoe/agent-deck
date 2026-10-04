@@ -142,3 +142,6 @@
 @media(prefers-reduced-transparency:reduce) {
   .app-shell .mission-sidebar, .app-shell .mission-inspector { backdrop-filter: none; background: #171b20; }
 }
+.source-receipts details { margin-top:10px; border-top:1px solid #ffffff10; padding-top:10px; }
+.source-receipts summary { color:#c7d4e4; font-size:12px; line-height:1.5; overflow-wrap:anywhere; cursor:pointer; }
+.source-receipts code { white-space:normal; overflow-wrap:anywhere; }
