@@ -22,15 +22,20 @@ try {
   await page.getByRole("heading", { level: 1 }).waitFor();
   page.on("pageerror", error => errors.push(error.message));
   page.on("request", request => { if (request.url().startsWith("https://must-not-request.test")) externalRequests.push(request.url()); });
-  for (const [label, document] of [["readiness", path.join(generated, "report.html")], ["protocol", path.join(root, "docs/personal-agent-evaluation.html")]]) {
+  for (const [label, document] of [["readiness", path.join(generated, "report.html")], ["protocol", path.join(root, "docs/personal-agent-evaluation.html")], ["architecture", path.join(root, "docs/personal-agent-architecture.html")]]) {
     await app.evaluate(({ BrowserWindow }, file) => BrowserWindow.getAllWindows()[0].loadFile(file), document);
-    await page.getByRole("heading", { level: 1 }).waitFor();
+    if (label === "architecture") await page.waitForFunction(() => document.querySelector(".diagram img")?.naturalWidth > 0);
+    else await page.getByRole("heading", { level: 1 }).waitFor();
     for (const [width, height] of [[1540,960], [1120,720]]) {
       await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), { width, height });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
       await page.screenshot({ path: path.join(screenshots, `${label}-${width}.png`), fullPage: true });
     }
   }
+  await app.evaluate(({ BrowserWindow }, file) => BrowserWindow.getAllWindows()[0].loadFile(file), path.join(root, "docs/diagrams/personal-context-evaluation.svg"));
+  await page.locator("svg text").first().waitFor();
+  const diagramLabels = await page.locator("svg text").evaluateAll(nodes => nodes.map(node => { const { x, y, width, height } = node.getBBox(); return { text: node.textContent, x, y, width, height }; }));
+  for (const label of diagramLabels) assert.ok(label.x >= 0 && label.y >= 0 && label.x + label.width <= 1120 && label.y + label.height <= 1140, `Diagram label clipped: ${label.text}`);
   await app.evaluate(({ BrowserWindow }, file) => BrowserWindow.getAllWindows()[0].loadFile(file), hostile);
   await page.frameLocator("iframe").getByRole("heading", { name: "隔离测试" }).waitFor();
   assert.ok(!(await page.innerText("body")).includes("ESCAPED"));

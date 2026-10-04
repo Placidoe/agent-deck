@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1140" viewBox="0 0 1120 1140" role="img" aria-labelledby="diagram-title diagram-desc">
+  <title id="diagram-title">Personal Agent 项目背景对照架构</title>
+  <desc id="diagram-desc">相同请求、资料、模型和 Harness。A 组不注入背景，B 组注入已授权的同源项目背景。两组轮换顺序运行，在不同会话和成果目录中分别执行与独立复核。宿主记录耗时、真实 Token、来源回执和失败，再对同口径结果进行合同检查与配对比较。真实模型评测和人工盲审尚未完成。</desc>
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#171d29"/><stop offset="1" stop-color="#121721"/></linearGradient>
+    <linearGradient id="context" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#192d48"/><stop offset="1" stop-color="#162236"/></linearGradient>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#7c8aa1" stroke-width="1.5"/></marker>
+    <marker id="blue-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#91b8f4" stroke-width="1.5"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;fill:#e6ebf5;font-size:18px}
+      .caption{font-size:16px;fill:#9cabc1}.label{font-size:15px;fill:#aab9ce;letter-spacing:1px}.heading{font-size:22px;font-weight:600}.title{font-size:30px;font-weight:600;letter-spacing:-.4px}
+      .line{fill:none;stroke:#7c8aa1;stroke-width:1.5;marker-end:url(#arrow)}.blue-line{fill:none;stroke:#91b8f4;stroke-width:1.5;marker-end:url(#blue-arrow)}
+      .node{fill:url(#surface);stroke:#364255;stroke-width:1}.body{font-size:17px;fill:#b1bfd2}.micro{font-size:15px;fill:#a6b4c8}.accent{fill:#b5d0fc}
+    </style>
+  </defs>
+  <rect width="1120" height="1140" rx="24" fill="#0e131d"/>
+  <text x="44" y="48" class="label">AGENT DECK / PERSONAL CONTEXT EVALUATION</text>
+  <text x="44" y="92" class="title">相同能力，只改变项目背景</text>
+  <text x="44" y="123" class="caption">双泳道表示对照关系 · 两组轮换顺序运行，不是并行多 Agent 调度</text>
+  <rect x="44" y="156" width="1032" height="112" rx="16" class="node"/>
+  <rect x="66" y="178" width="5" height="64" rx="2.5" fill="#9ab9e9"/>
+  <text x="90" y="195" class="heading">固定输入与实验条件</text>
+  <text x="90" y="227" class="body">同一最新请求 · 同一 brief / prior-notes · 同一模型、Endpoint 与 Harness 版本</text>
+  <text x="90" y="251" class="micro">材料是明确标注的合成资料；来源与请求以 SHA-256 固定，不读取真实个人数据</text>
+  <path d="M560 268 V288 H292 V318" class="line"/>
+  <path d="M560 288 H828 V318" class="blue-line"/>
+  <circle cx="560" cy="288" r="4" fill="#a9bad2"/>
+  <rect x="44" y="330" width="496" height="154" rx="16" class="node"/>
+  <circle cx="81" cy="369" r="18" fill="#2b3648"/><text x="81" y="375" text-anchor="middle" font-size="17">A</text>
+  <text x="111" y="377" class="heading">普通任务 · 对照组</text>
+  <text x="68" y="417" class="body">不注入项目背景</text>
+  <text x="68" y="447" class="caption">自行读取当前资料与历史文件</text>
+  <text x="68" y="471" class="micro">能获得与 B 组相同的事实，不少给信息</text>
+  <rect x="580" y="330" width="496" height="154" rx="16" fill="url(#context)" stroke="#638ec9" stroke-width="1"/>
+  <circle cx="617" cy="369" r="18" fill="#33517c"/><text x="617" y="375" text-anchor="middle" font-size="17">B</text>
+  <text x="647" y="377" class="heading">项目背景 · 实验组</text>
+  <text x="604" y="417" class="accent">注入有预算的授权背景</text>
+  <text x="604" y="447" class="caption">同源已确认记忆 + 合成已验收摘要</text>
+  <text x="604" y="471" class="micro">撤销记忆排除；旧结论不能覆盖新条件</text>
+  <path d="M292 484 V536" class="line"/>
+  <path d="M828 484 V536" class="blue-line"/>
+  <text x="560" y="516" text-anchor="middle" class="micro">唯一实验变量：是否提前整理并注入项目背景</text>
+  <rect x="44" y="548" width="1032" height="234" rx="18" fill="#111923" stroke="#354154" stroke-width="1"/>
+  <text x="68" y="578" class="label">相同 NATIVE HARNESS 实现 · 各自独立的会话与成果目录</text>
+  <rect x="68" y="602" width="208" height="88" rx="12" class="node"/>
+  <text x="88" y="638" class="heading">Executor</text><text x="88" y="667" class="caption">读来源，生成草稿</text>
+  <path d="M276 647 H312" class="line"/>
+  <rect x="324" y="602" width="192" height="88" rx="12" class="node"/>
+  <text x="344" y="638" class="heading">Auditor</text><text x="344" y="667" class="caption">新鲜、只读复核</text>
+  <rect x="604" y="602" width="208" height="88" rx="12" class="node"/>
+  <text x="624" y="638" class="heading">Executor</text><text x="624" y="667" class="caption">读来源，生成草稿</text>
+  <path d="M812 647 H848" class="line"/>
+  <rect x="860" y="602" width="192" height="88" rx="12" class="node"/>
+  <text x="880" y="638" class="heading">Auditor</text><text x="880" y="667" class="caption">新鲜、只读复核</text>
+  <path d="M68 712 H1052" stroke="#2d394b" stroke-width="1"/>
+  <text x="68" y="741" class="body">共同权限边界</text>
+  <text x="251" y="741" class="caption">资料只读 · 仅批准 report.html 写入 · 网页 / Shell / Git 不开放</text>
+  <text x="68" y="764" class="micro">模型自检与自动写入批准，都不等于人工验收</text>
+  <path d="M292 782 V822" class="line"/>
+  <path d="M828 782 V822" class="line"/>
+  <rect x="44" y="834" width="496" height="100" rx="14" class="node"/>
+  <text x="68" y="870" class="heading">A 组证据记录</text><text x="68" y="902" class="caption">耗时 · 真实 Token · 来源回执 · 失败</text>
+  <rect x="580" y="834" width="496" height="100" rx="14" class="node"/>
+  <text x="604" y="870" class="heading">B 组证据记录</text><text x="604" y="902" class="caption">耗时 · 真实 Token · 来源回执 · 失败</text>
+  <path d="M292 934 V957 H560 V978" class="line"/>
+  <path d="M828 934 V957 H560" fill="none" stroke="#7c8aa1" stroke-width="1.5"/>
+  <rect x="44" y="990" width="1032" height="96" rx="16" class="node"/>
+  <text x="68" y="1025" class="heading">同口径比较 → 再由人判断交付质量</text>
+  <text x="68" y="1057" class="caption">合同检查保留所有失败；只有双方通过才计算耗时 / Token 比，未知用量留空</text>
+  <circle cx="54" cy="1110" r="4" fill="#98a8bd"/>
+  <text x="68" y="1116" class="micro">当前：评测工具已实现，真实模型与人工盲审尚未测。图中流程不代表已有性能收益。</text>
+</svg>
