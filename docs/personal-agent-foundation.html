@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agent Deck · Personal Agent 第一阶段</title>
+<style>body{margin:0;background:#111419;color:#dee4ed;font:15px/1.8 system-ui,-apple-system,sans-serif}main{max-width:1000px;margin:auto;padding:56px 28px}h1{font-size:34px;line-height:1.3;letter-spacing:-1px}h2{margin-top:36px;font-size:23px}p,li{color:#acb6c5}a{color:#9cbdee}small{color:#8290a2}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:13px 10px;border-bottom:1px solid #313946;text-align:left;vertical-align:top}.scroll{overflow:auto}.flow{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:24px 0}.node{border:1px solid #374353;border-radius:10px;background:#1b222c;padding:20px}.wide{grid-column:1/-1}.node p{margin:8px 0 0}.notice{border-left:3px solid #7d9cc8;padding:12px 20px;background:#1c2531}code{font-size:13px;color:#adcaec}footer{margin-top:40px;border-top:1px solid #313946;padding-top:20px}@media(max-width:650px){main{padding:26px 18px}.flow{grid-template-columns:1fr}.wide{grid-column:auto}h1{font-size:27px}}</style></head><body><main>
+<small>IMPLEMENTATION NOTE · 2026-10-04 · 第一阶段 / Beta</small><h1>不只是开一轮对话，而是接着推进自己的事</h1>
+<p>我把这一步聚焦在长期项目、用户掌握的记忆和低成本恢复上。工作、审批、成果仍然使用同一份真实账本；两种执行模式继续保留。它是 Personal Agent 的基础，不是已经能包办生活的全能助手。</p>
+<h2>怎么用</h2><ol><li>进入<strong>工作 → 项目与记忆</strong>，创建项目，写清长期目标。项目名称、目标和已验收结果可用于后续模型请求。</li><li>点击<strong>记住一件事</strong>。默认只在本机保存，勾选“允许用于 Agent 请求”才会主动提供给配置的模型服务。个人偏好作用于全部项目，项目记忆只作用于所属项目。</li><li>新建工作时选择所属项目；已有工作也可在详情关联项目。运行中或待批准的执行不能中途换项目。</li><li>重新打开项目，查看<strong>上次做到哪了</strong>。它直接读取账本，展示真实状态、验收数、异常和下一步；不会调用模型或重新启动任务。</li><li>展开<strong>检查下一次请求的背景</strong>，查看可复用记录、来源、字符预算。真正发送时还会按任务词排序，并排除当前 Mission。</li></ol>
+<h2>架构与职责</h2><section class="flow" aria-label="个人项目和记忆架构图">
+<div class="node wide"><strong>桌面工作台：工作 / 待我处理 / 成果</strong><p>项目与记忆是“工作”里的辅助视图，不增加第四个主入口。一个项目包含多次工作，每次工作仍拥有自己的执行记录。</p></div>
+<div class="node"><strong>PersonalStore · 同一份 SQLite</strong><p>项目目标、作用范围、来源、有效期、分享授权、版本号。关联 Requirement 与 Mission，但不创建重复任务。</p></div>
+<div class="node"><strong>恢复视图 · 本地状态投影</strong><p>任务账本 → 待批准 / 阻塞 / 待验收 / 完成 → 明确的下一步。只读取，不产生模型开销。</p></div>
+<div class="node wide"><strong>请求前筛选 · 可追溯背景快照 ↓</strong><p>已确认 + 允许分享 + 未过期 → 项目同名记忆覆盖个人偏好 → 当前项目的已验收摘要 → 任务词排序 → 默认 6,000 字符 / 最多 20 条。记录 ID、版本和数量进入事件账本，不重复存全文。</p></div>
+<div class="node"><strong>外部 Agent + 轻量 Harness</strong><p>主 Agent、Worker 和后续消息都获得当前背景快照；外部 Agent 负责自己的推理与工具循环。</p></div>
+<div class="node"><strong>Agent Deck Harness SDK</strong><p>产品提供目标与当前背景；独立 SDK 负责 Manager / Executor / Auditor 和受控工具。SDK 不依赖个人项目的 SQLite 结构。</p></div>
+</section>
+<h2>这次实际完成了什么</h2><div class="scroll"><table><thead><tr><th>能力</th><th>实际行为</th><th>验证位置</th></tr></thead><tbody>
+<tr><td>长期项目</td><td>创建、编辑、归档、恢复；跨工作区筛选项目里的工作；旧数据增量升级</td><td>personal-agent.test.mjs / 桌面 CRUD</td></tr>
+<tr><td>用户掌握的记忆</td><td>个人与项目两级作用范围；来源、有效期、确认状态；编辑、撤销分享、删除、版本冲突检测</td><td>过滤、覆盖、修正、删除与旧版本测试</td></tr>
+<tr><td>跨任务背景</td><td>只复用同项目已验收摘要，不自动读取全部聊天或其他项目结果；默认 6,000 字符上限</td><td>隔离、预算、Planner / Worker / Follow-up 合同测试</td></tr>
+<tr><td>继续推进</td><td>从状态账本恢复；不消耗模型 Token，不自动重跑</td><td>恢复不改变账本的断言</td></tr>
+<tr><td>自有引擎入口</td><td>工作入口不再强制要求 Codex 登录，由所选引擎检查 API 是否就绪；配置前失败的未关联需求可重试</td><td>禁用 Codex 的真实 Electron 流程</td></tr>
+<tr><td>布局</td><td>项目选择器只显示一次；高级记忆字段折叠；窄窗口独立滚动，无横向吞边；原生模式标题提示垂直居中</td><td>1540×960 与 1120×720 桌面截图</td></tr>
+</tbody></table></div>
+<h2>边界必须说清楚</h2><aside class="notice"><p>“允许分享”是向模型服务提供背景的授权，不是执行任何操作的授权。记忆中的内容属于引用数据；不能绕过工具批准、文件隔离或人工验收。</p><p>修改、过期和撤销会影响后续主动注入的快照，但不会抹除以前发送的提示词、外部 Agent 历史或已保存的运行记录。当前执行中的模型请求也不会被悄悄重写。</p><p>目前是有范围和预算的词匹配排序，不是语义检索，也不保证上下文完全无噪音。恢复读取最近 20 次执行和最多 12 项待处理记录；记忆界面读取最近 300 条。未验收的模型结论不会自动变成事实。</p></aside>
+<h2>验证与未完成事项</h2><p>87 项回归与 4 项网站交付测试通过；源码版和实际打包版均通过 Electron 操作流程，以及 1540×960 / 1120×720 布局检查。桌面测试使用明确标注的临时 QA 项目，不访问真实用户资料、不发送真实模型请求。它验证生命周期、权限边界和使用流程，不能证明真实模型质量或相对 Codex 的速度收益。</p><p>无可复用背景的普通任务不增加个人上下文提示词；撤销此前已注入的记忆时发送必要的替换快照。当前桌面包仅供本机 Beta 体验，尚未签名和公证，不是正式市场发行版。</p>
+<div class="scroll"><table><thead><tr><th>下一阶段</th><th>要做到什么</th><th>验收依据</th></tr></thead><tbody>
+<tr><td>P0 · Personal Tools</td><td>明确授权的资料 / 网页读取、引用与工具错误说明；外部动作先生成草稿，不默认发送</td><td>目录隔离、来源可追溯、权限与失败恢复测试</td></tr>
+<tr><td>P0 · 一个完整个人场景</td><td>围绕“持续调研与形成决策”，实现输入 → 来源 → 证据 → HTML 交付 → 人工确认 → 下次继续</td><td>真实 API 端到端任务与可阅读产物</td></tr>
+<tr><td>P0 · 性能与质量基线</td><td>单 Agent 优先；比较有 / 无记忆的任务，记录耗时、真实 Token、纠错和重复读取</td><td>固定用例、相同模型、重复运行，不把估算包装成收益</td></tr>
+<tr><td>暂缓</td><td>ROI、手机 / 耳机、更多 Provider、无人确认的主动执行</td><td>基础闭环稳定后再讨论</td></tr>
+</tbody></table></div>
+<footer><a href="runtime-modes.html">两种执行模式与原有 Harness 架构 →</a></footer>
+<script type="application/json" id="agent-deck-data">{"stage":"personal-agent-foundation","date":"2026-10-04","status":"beta","contextMaxChars":6000,"contextMaxItems":20,"memoryOptInDefault":false,"recoveryModelCalls":0,"liveApiQualityEvaluated":false}</script>
+</main></body></html>

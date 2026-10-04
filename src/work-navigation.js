@@ -23,6 +23,7 @@ export function collectWork(requirements = [], missions = [], workspacePath) {
   for (const mission of missions) {
     if (linked.has(mission.id) || (workspacePath && mission.cwd !== workspacePath)) continue;
     rows.push({ id: `mission:${mission.id}`, missionId: mission.id, missionTitle: mission.title,
+      projectId: mission.projectId || null,
       title: mission.title, outcome: mission.outcome, body: "", status: missionStatuses[mission.status] || "blocked",
       priority: "medium", updatedAt: mission.updatedAt, createdAt: mission.createdAt, workspacePath: mission.cwd,
       executionWorkspace: mission.cwd, counts: mission.counts, valueContract: mission.valueContract, workSource: "mission" });

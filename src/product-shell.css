@@ -16,7 +16,9 @@
 .product-connection i.connected { background:#7bbc94; }
 .product-main { min-height:0; min-width:0; display:grid; grid-template-rows:49px minmax(0,1fr); }
 .work-navigation { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:0 26px; border-bottom:1px solid #ffffff0b; background:#15181c; }
-.work-navigation nav { display:flex; gap:24px; height:100%; }
+.work-navigation nav { display:flex; align-items:center; gap:24px; height:100%; min-width:0; }
+.work-navigation nav button { height:100%; }
+.work-navigation nav .section-caption { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
 .work-navigation button { display:inline-flex; align-items:center; gap:7px; padding:0; border:0; background:transparent; color:#8b95a3; font:500 12px var(--font-ui); }
 .work-navigation nav button { border-bottom:2px solid transparent; }
 .work-navigation nav button[aria-current=page] { color:#e1e7ef; border-color:#8fabc9; }

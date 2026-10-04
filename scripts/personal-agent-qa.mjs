@@ -1,0 +1,85 @@
+import { _electron as electron } from "playwright";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const profile = fs.mkdtempSync(path.join(os.tmpdir(), "agent-deck-personal-qa-"));
+const screenshots = path.join(root, "qa/personal-agent");
+fs.mkdirSync(screenshots, { recursive: true });
+fs.writeFileSync(path.join(profile, "provider-profiles.json"), JSON.stringify({ api: {}, runtime: { mode: "agent_deck", externalProvider: "codex", modelProvider: "deepseek" } }));
+fs.writeFileSync(path.join(profile, "workspace.json"), JSON.stringify({ path: root }));
+let app;
+try {
+  const packagedApp = process.env.AGENT_DECK_QA_APP_PATH;
+  app = await electron.launch({ executablePath: packagedApp ? path.join(packagedApp, "Contents/MacOS/Agent Deck") : path.resolve(root, "../research/labs/grokbot-desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"), args: [...(packagedApp ? [] : [root]), `--user-data-dir=${profile}`, "--disable-gpu"], env: { ...process.env, CODEX_BINARY: "/no-codex-personal-qa" } });
+  const page = await app.firstWindow(); const errors = [];
+  page.on("pageerror", err => errors.push(err.message));
+  await page.getByRole("button", { name: "项目与记忆", exact: true }).click();
+  await page.getByRole("button", { name: "新建项目", exact: true }).click();
+  await page.getByRole("textbox", { name: "项目名称", exact: true }).fill("QA · 个人产品发布");
+  await page.getByRole("textbox", { name: "长期目标", exact: true }).fill("验证项目、记忆和工作之间的真实闭环，不调用模型、不修改真实用户数据。");
+  await page.getByRole("button", { name: "保存项目", exact: true }).click();
+  await page.getByRole("heading", { name: "QA · 个人产品发布", exact: true }).waitFor();
+  const pid = (await page.evaluate(() => window.agentDeckDesktop.personal.projects()))[0].id;
+  await page.getByRole("button", { name: "记住一件事", exact: true }).click();
+  await page.getByRole("textbox", { name: "记忆名称", exact: true }).fill("报告语言");
+  await page.getByRole("textbox", { name: "记住什么", exact: true }).fill("报告使用中文，保留一手来源、关键证据和未验证的限制。");
+  const sharing = page.getByRole("checkbox", { name: /允许用于 Agent 请求/ });
+  assert.equal(await sharing.isChecked(), false);
+  await sharing.check(); await page.getByRole("button", { name: "保存记忆", exact: true }).click();
+  await page.getByText("可用于请求", { exact: false }).waitFor();
+  assert.equal((await page.evaluate(pid => window.agentDeckDesktop.personal.context({ projectId: pid }), pid)).items.length, 1);
+  await page.getByRole("button", { name: "为这个项目新建工作", exact: true }).click();
+  await page.getByRole("textbox", { name: /一句话描述要做的事/ }).fill("QA · 发布方案");
+  await page.getByRole("textbox", { name: /做到什么程度算完成/ }).fill("交付有证据的离线报告");
+  await page.getByRole("checkbox", { name: /保存后立即生成计划/ }).uncheck();
+  await page.getByRole("button", { name: "保存需求", exact: true }).click();
+  assert.equal((await page.evaluate(() => window.agentDeckDesktop.requirements.list()))[0].projectId, pid);
+  // Seed clearly labelled accepted QA evidence in the isolated ledger only.
+  {
+    const { MissionStore } = createRequire(import.meta.url)(`${root}/desktop/mission-store.cjs`);
+    const userData = await app.evaluate(({ app }) => app.getPath("userData"));
+    assert.equal(fs.realpathSync(userData), fs.realpathSync(profile));
+    const store = new MissionStore(path.join(userData, "agent-deck.sqlite3"));
+    const mission = store.createMission({ title: "QA · 已验收证据", outcome: "验证本地恢复", cwd: root, projectId: pid });
+    store.savePlan(mission.id, { title: "QA · 已验收证据", outcome: "验证本地恢复", tasks: [{ key: "QA", title: "QA · 核查上下文", description: "isolated fixture", agentRole: "QA", dependencies: [], acceptanceCriteria: ["test only"] }] });
+    store.updateTask(store.getMission(mission.id).tasks[0].id, { status: "completed", result: { summary: "QA 测试记录：本地偏好已明确授权；项目与工作在同一账本，未执行模型请求。" } });
+    store.updateMission(mission.id, { status: "completed" }); store.close();
+  }
+  if (await page.getByRole("button", { name: "返回工作", exact: true }).count()) await page.getByRole("button", { name: "返回工作", exact: true }).click();
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page.getByRole("button", { name: "项目与记忆", exact: true }).click();
+  await page.locator('.personal-recovery').getByText("QA · 已验收证据", { exact: true }).waitFor();
+  for (const [width, height] of [[1540, 960], [1120, 720]]) {
+    await app.evaluate(({ BrowserWindow }, { width, height }) => BrowserWindow.getAllWindows()[0].setContentSize(width, height), { width, height });
+    await page.screenshot({ path: path.join(screenshots, `personal-${width}.png`) });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+    assert.equal(await page.locator('.personal-panel').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await page.getByRole("button", { name: "记住一件事", exact: true }).click();
+    await page.screenshot({ path: path.join(screenshots, `memory-form-${width}.png`) });
+    assert.equal(await page.locator('.personal-panel').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await page.getByRole("button", { name: "关闭记忆表单", exact: true }).click();
+  }
+  await page.locator('.personal-memory-actions').getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("textbox", { name: "记住什么", exact: true }).fill("更正：中英对照报告。");
+  await sharing.uncheck(); await page.getByRole("button", { name: "保存记忆", exact: true }).click();
+  await page.getByText("更正：中英对照报告。", { exact: true }).waitFor();
+  const after = await page.evaluate(pid => window.agentDeckDesktop.personal.context({ projectId: pid }), pid);
+  assert.equal(after.items.filter(item => item.type === "memory").length, 0);
+  await page.locator('.personal-memory-actions').getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByRole("button", { name: "确认删除", exact: true }).click();
+  await page.getByText("还没有记忆。先留下一条真正有用的偏好。", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "返回工作", exact: true }).click();
+  await page.getByRole("button", { name: /QA · 发布方案/ }).click();
+  await page.getByRole("button", { name: "生成计划", exact: true }).click();
+  await page.getByText(/Save and verify the model API/).waitFor();
+  assert.equal(await page.getByText(/请先登录本机 Codex/).count(), 0);
+  await page.getByRole("button", { name: "关闭提示", exact: true }).click();
+  await page.getByRole("button", { name: "生成计划", exact: true }).click();
+  await page.getByText(/Save and verify the model API/).waitFor();
+  assert.deepEqual(errors, []);
+  console.log(JSON.stringify({ ok: true, nativeWithoutCodex: true, projectMemoryCrud: true, acceptedRecovery: true, viewports: [1540,1120], screenshots }, null, 2));
+} finally { if (app) await app.close(); fs.rmSync(profile, { recursive: true, force: true }); }

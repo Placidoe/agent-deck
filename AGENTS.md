@@ -10,6 +10,8 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 
 ## Selected product direction
 
+- Latest Personal Agent direction: long-lived personal projects contain multiple work records; explicitly user-owned scoped memory supports correction, revocation, sources and expiration. Project goals and individually opted-in, confirmed memories may enter bounded model requests; never promote raw chat or unreviewed output into trusted memory. Keep three primary destinations. Recovery is a deterministic projection of the local ledger, not a new model turn or duplicate execution. Performance, evidence-backed quality and actionable attention remain the priorities; ROI, mobile/ASR and extra providers are deferred.
+
 - Latest product direction (supersedes the older default multi-session landing): keep only three primary destinations — 工作, 待我处理, 成果 — plus Settings at the bottom. Open on the unified work list. Requirements and unlinked Missions are read-only projections in one list, deduplicated by Mission ID; never create duplicate executions to unify navigation. Parallel sessions remain a one-click work view; DAG and activity are drill-down tools. Use visible text labels, explicit return navigation, and one next action instead of a dashboard of competing controls. Preserve all existing records and approval gates.
 
 - The product is a dark, native-feeling macOS control room for managing multiple independent Codex sessions in parallel.
