@@ -2,7 +2,6 @@ export const attentionProfiles = [
   { id: "flow", label: "护航推进", description: "优先清除阻塞，让在途工作继续流动。" },
   { id: "delivery", label: "交付验收", description: "优先审阅已完成成果，尽快形成可交付结果。" },
   { id: "risk", label: "风险控制", description: "优先处理失败、冲突和权限决策。" },
-  { id: "value", label: "价值优先", description: "优先高边际价值、低预算的下一步。" },
 ];
 
 function bounded(value, maximum = 24) { return Math.max(-maximum, Math.min(maximum, Math.round(value))); }
@@ -18,15 +17,6 @@ export function attentionAdjustment(item, profileId = "flow") {
     if (["worker_blocked", "integration_conflict", "mission_failed"].includes(type)) return { boost: 18, reason: "存在失败或冲突，优先恢复可控状态" };
     if (type === "worker_approval") return { boost: 12, reason: "权限决定会直接影响执行边界" };
     return { boost: -3, reason: "风险较低，稍后处理" };
-  }
-  if (profileId === "value") {
-    const score = Math.max(0, Number(item?.valueScore || 0));
-    const budget = Math.max(500, Number(item?.estimatedTokenBudget || 6000));
-    const density = score ? score * 6000 / budget : 0;
-    const boost = bounded(score * 2.2 + density * 2.5, 20);
-    return boost > 0
-      ? { boost, reason: `预估价值 ${score}/5；按 ${budget.toLocaleString()} token 预算计算边际价值密度` }
-      : { boost: 0, reason: "尚无可比较的任务价值估计" };
   }
   if (["worker_blocked", "integration_conflict", "mission_failed"].includes(type)) return { boost: 16, reason: "清除阻塞可恢复后续工作流" };
   if (type === "worker_approval") return { boost: 10, reason: "一次决定即可让 Worker 继续" };

@@ -31,9 +31,9 @@ After the Worker returns structured evidence, one human acceptance commits the w
 - Plans that exceed the route's task limit are rejected instead of silently spawning excessive Workers.
 - The persisted spec records route, reasons, score, worker/task caps, budget, and repaired dependency edges.
 
-## Token and ROI accounting
+## Token usage accounting
 
-The Value Ledger now separates Planner prompt tokens and Worker prompt tokens. Direct mode records zero Planner tokens. Context is not double-counted when it is already present in the recorded Worker prompt estimate. Provider-reported usage still takes precedence when available.
+The usage summary now separates Planner prompt tokens and Worker prompt tokens. Direct mode records zero Planner tokens. Context is not double-counted when it is already present in the recorded Worker prompt estimate. Provider-reported usage still takes precedence when available.
 
 ## How to verify the effect
 

@@ -313,7 +313,7 @@ function ProviderCard({ provider, onSaveApi, onVerifyApi, onBridge }) {
     setBusy(true); setNotice("");
     try {
       const result = await onVerifyApi(provider.id);
-      setNotice(`Verified in ${result.result?.latencyMs || 0}ms. Usage is now available for the Value Ledger.`);
+      setNotice(`连接验证完成 · ${result.result?.latencyMs || 0}ms。实际用量将在运行记录中保留。`);
     } catch (error) { setNotice(error.message || String(error)); }
     finally { setBusy(false); }
   };

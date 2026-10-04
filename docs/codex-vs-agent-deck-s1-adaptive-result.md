@@ -31,7 +31,7 @@
 ## 这轮具体改变
 
 1. 本地确定性路由选择 Direct：0 Planner、1 Worker、1 Worktree。
-2. Direct 不再注册跨 Agent 消息总线工具，也不再注入 Mission 价值账本、共享上下文和产物协议长模板。
+2. Direct 不再注册跨 Agent 消息总线工具，也不再注入 Mission 扩展字段、共享上下文和产物协议长模板。
 3. Direct Prompt 只保留任务、验收、最小行为分区和验证要求。
 4. 对 parser/validator/CLI 类任务要求覆盖标准有效值、边界有效值、近似非法值、类型、标准化和公共 API 兼容性。
 5. 一次人工验收后自动提交和集成。
@@ -49,4 +49,3 @@ npm run eval:s1:adaptive
 ```
 
 执行器每次从固定 seed commit 创建隔离克隆，启动真实 Agent Deck Direct Mission，完成后独立运行公开与隐藏 grader，并把原始测试输出、Diff、路由、时间、Worker 和 Token 口径写入 `../evals/results/s1-adaptive-*.json`。
-

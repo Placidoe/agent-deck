@@ -59,7 +59,7 @@ async function main() {
     sourcePrompt: "Create LIVE_CODEX_RESULT.txt containing exactly: codex worker completed",
     cwd: repository,
     orchestrationMode: "adaptive",
-    valueContract: { tokenBudget: 20000 },
+    tokenBudget: 20000,
   });
   assert.equal(mission.mainThreadId, null);
   assert.equal(mission.spec.runtime.mode, "direct");

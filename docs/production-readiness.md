@@ -72,7 +72,7 @@ Every Mission calls a common provider runtime contract: `createThread`, `sendTur
 | Claude Code | Bridge only | MCP bridge for progress/artifacts; it is not selectable for Mission dispatch until its JSON-stream lifecycle and permission adapter pass conformance tests |
 | TraeCode | Bridge only | MCP bridge and ACP discovery; it is not selectable for Mission dispatch until its ACP client lifecycle and permission adapter pass conformance tests |
 
-API Main Agents are deliberately planning-only. They cannot execute writes or commands. An API Worker can propose an operation, which pauses with its exact command or path in the Inspector; `Allow once` is the only route to execution. The approval decision, execution result, and worker turn are appended to the same local event ledger used for review and ROI.
+API Main Agents are deliberately planning-only. They cannot execute writes or commands. An API Worker can propose an operation, which pauses with its exact command or path in the Inspector; `Allow once` is the only route to execution. The approval decision, execution result, and worker turn are appended to the same local event ledger used for review and recovery.
 
 ## Performance acceptance baseline
 

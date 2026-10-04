@@ -24,7 +24,7 @@ function classifyMissionRequest(input = {}) {
   if (requested !== "adaptive") reasons.unshift(`user selected ${requested} strategy`);
   if (!reasons.length) reasons.push(mode === "direct" ? "bounded request with no proven coordination benefit" : "coordination benefit exceeds setup cost");
   const tier = mode === "direct" ? "direct" : complexityScore >= 7 ? "orchestrated" : "coordinated";
-  const tokenBudget = Math.max(1000, Number(input.valueContract?.tokenBudget || 80000));
+  const tokenBudget = Math.max(1000, Number(input.tokenBudget || 80000));
   const routeTaskCap = mode === "direct" ? 1 : tier === "coordinated" ? 4 : 8;
   const maxTasks = Math.max(1, Math.min(routeTaskCap, Math.floor(tokenBudget / 500)));
   const routeWorkerCap = mode === "direct" ? 1 : tier === "coordinated" ? 3 : Math.max(2, Math.min(6, Number(input.maxWorkers || 4)));
@@ -52,7 +52,7 @@ function acceptanceFromRequest(input = {}) {
 }
 
 function buildDirectPlan(input = {}, route = classifyMissionRequest({ ...input, orchestrationMode: "direct" })) {
-  const totalBudget = Math.max(1000, Number(input.valueContract?.tokenBudget || 80000));
+  const totalBudget = Math.max(1000, Number(input.tokenBudget || 80000));
   const directBudget = Math.min(totalBudget, 20000);
   return {
     title: String(input.title || "Direct delivery").trim(),
@@ -69,9 +69,7 @@ function buildDirectPlan(input = {}, route = classifyMissionRequest({ ...input, 
       agentRole: "Delivery Agent",
       dependencies: [],
       acceptanceCriteria: acceptanceFromRequest(input),
-      valueScore: 5,
       estimatedTokenBudget: directBudget,
-      valueRationale: "Avoids planner and coordination overhead while keeping implementation, tests, and evidence in one coherent context.",
     }],
   };
 }
@@ -85,22 +83,22 @@ function hasDependencyPath(byKey, from, to, seen = new Set()) {
 
 function fitTaskBudgets(tasks, totalBudget) {
   const budget = Math.max(1000, Number(totalBudget || 80000));
-  const current = tasks.reduce((sum, task) => sum + Number(task.value?.estimatedTokenBudget || 6000), 0);
+  const current = tasks.reduce((sum, task) => sum + Number(task.estimatedTokenBudget || 6000), 0);
   if (current <= budget) return tasks;
   const floor = 500;
   const distributable = Math.max(0, budget - floor * tasks.length);
-  const weights = tasks.map(task => Math.max(1, Number(task.value?.estimatedTokenBudget || 6000) - floor));
+  const weights = tasks.map(task => Math.max(1, Number(task.estimatedTokenBudget || 6000) - floor));
   const totalWeight = weights.reduce((sum, value) => sum + value, 0) || 1;
   return tasks.map((task, index) => ({
     ...task,
-    value: { ...task.value, estimatedTokenBudget: floor + Math.floor(distributable * weights[index] / totalWeight) },
+    estimatedTokenBudget: floor + Math.floor(distributable * weights[index] / totalWeight),
   }));
 }
 
 function optimizeMissionPlan(plan, route, totalBudget) {
   if (!plan?.tasks?.length) return plan;
   if (plan.tasks.length > route.maxTasks) throw new Error(`The generated plan has ${plan.tasks.length} tasks; this ${route.tier} route allows at most ${route.maxTasks}. Ask the planner to combine tightly coupled implementation and test work.`);
-  const tasks = plan.tasks.map(task => ({ ...task, dependencies: [...task.dependencies], value: { ...task.value } }));
+  const tasks = plan.tasks.map(task => ({ ...task, dependencies: [...task.dependencies] }));
   const byKey = new Map(tasks.map(task => [task.key, task]));
   const text = task => [task.key, task.title, task.description, task.agentRole].filter(Boolean).join(" ");
   const implementations = tasks.filter(task => IMPLEMENTATION_PATTERN.test(text(task)) && !TEST_PATTERN.test(text(task)));
@@ -125,7 +123,7 @@ function optimizeMissionPlan(plan, route, totalBudget) {
     }
   }
   const budgetedTasks = fitTaskBudgets(tasks, totalBudget);
-  const plannedTokens = budgetedTasks.reduce((sum, task) => sum + Number(task.value?.estimatedTokenBudget || 0), 0);
+  const plannedTokens = budgetedTasks.reduce((sum, task) => sum + Number(task.estimatedTokenBudget || 0), 0);
   return {
     ...plan,
     tasks: budgetedTasks,

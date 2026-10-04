@@ -70,13 +70,10 @@
 .detail-section > span { color: #b7bec8; font-size: 12px; font-weight: 600; }
 .detail-section p { margin: 10px 0 0; color: #b1b8c3; font-size: 13px; line-height: 1.85; overflow-wrap: anywhere; white-space: pre-wrap; }
 .detail-rail { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 28px; padding-top: 24px; border-top: 1px solid #ffffff0d; }
-.requirement-value-summary, .linked-mission { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; min-width: 0; }
-.requirement-value-summary > span, .linked-mission > span { font-size: 11px; color: #7d8795; }
-.requirement-value-summary strong, .linked-mission strong { color: #c5ccd5; font-size: 12px; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; }
-.requirement-value-summary small, .linked-mission small { color: #87919f; font-size: 11px; }
-.value-metrics { display: flex; gap: 16px; flex-wrap: wrap; }
-.value-metrics b { display: flex; gap: 8px; align-items: baseline; color: #788595; font-size: 10px; font-weight: 400; }
-.value-metrics em { font-style: normal; color: #bdc6d3; font-size: 12px; font-variant-numeric: tabular-nums; }
+.linked-mission { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; min-width: 0; }
+.linked-mission > span { font-size: 11px; color: #7d8795; }
+.linked-mission strong { color: #c5ccd5; font-size: 12px; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; }
+.linked-mission small { color: #87919f; font-size: 11px; }
 .linked-mission button { padding: 3px 0; border: 0; background: none; color: #8aaeee; min-height: 24px; }
 .detail-footer { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 34px; padding-top: 18px; border-top: 1px solid #ffffff0c; color: #6e7886; font-size: 10px; }
 .requirement-detail.empty, .requirement-list-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; padding: 36px; text-align: center; color: #8b95a3; }
@@ -101,11 +98,6 @@
 .requirement-composer textarea { min-height: 90px; resize: vertical; }
 .requirement-composer .more-options { justify-content: flex-start; padding-left: 0; border: 0; background: none; color: #9daabd; }
 .more-fields { display: flex; flex-direction: column; gap: 18px; }
-.requirement-value-intent { padding: 16px; background: #141820; border: 1px solid #ffffff0e; border-radius: 9px; }
-.requirement-value-intent header { display: flex; flex-direction: column; gap: 5px; font-size: 12px; margin-bottom: 12px; }
-.requirement-value-intent small { color: #7f8b9c; font-size: 11px; }
-.requirement-value-intent > div { display: flex; gap: 12px; margin-top: 12px; }
-.requirement-value-intent label { flex: 1; min-width: 0; }
 .requirement-composer .start-planning { display: flex; align-items: flex-start; gap: 10px; }
 .start-planning input { margin: 4px 0 0; accent-color: #5989da; }
 .start-planning span { display: flex; flex-direction: column; gap: 4px; }

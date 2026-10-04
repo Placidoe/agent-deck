@@ -53,8 +53,7 @@ function providerEventKey(event, threadId) {
 }
 
 function missionPlanningPrompt(mission, runtimeRoute = mission.spec?.runtime || {}) {
-  const valueContract = mission.valueContract || {};
-  return `Act as the Main Agent and convert this product request into an executable engineering mission. Produce a dependency-safe task DAG for independent workers. This request was routed as ${runtimeRoute.tier || "coordinated"}; return no more than ${runtimeRoute.maxTasks || 8} tasks and keep their combined estimatedTokenBudget within ${valueContract.tokenBudget || 80000}. Keep tasks coarse enough to avoid same-file conflicts. Implementation and its focused tests belong in the same task unless they can truly run against an already merged implementation. A final verifier, reviewer, report, or integration task must depend on every change it evaluates. Include concrete acceptance criteria and do not invent progress or completed work. Mark only synthesis, report, review, comparison, analysis, plan, or dashboard tasks as human-facing HTML work; evidence collection should retain native formats. For every task, provide valueScore (1-5), estimatedTokenBudget, and valueRationale. Favor independently verifiable high marginal-value work; do not spend parallel work on low-value duplicate investigation. Verification must derive boundary and invalid-input checks from the request instead of merely rerunning visible happy-path tests.\n\nREQUEST\n${mission.sourcePrompt || mission.outcome}\n\nDESIRED OUTCOME\n${mission.outcome}\n\nVALUE CONTRACT\nScenario: ${valueContract.scenario || "研发交付"}\nValue type: ${valueContract.valueType || "time_saved"}\nTarget metric: ${valueContract.targetMetric || "not supplied"}\nExpected value: ¥${valueContract.expectedValueCny || 0}; baseline human time: ${valueContract.baselineHours || 0}h; total token budget: ${valueContract.tokenBudget || 80000}.\n\n${FAST_EXECUTION_CONTRACT}`;
+  return `Act as the Main Agent and convert this product request into an executable engineering mission. Produce a dependency-safe task DAG for independent workers. This request was routed as ${runtimeRoute.tier || "coordinated"}; return no more than ${runtimeRoute.maxTasks || 8} tasks and keep their combined estimatedTokenBudget within ${mission.tokenBudget || 80000}. Keep tasks coarse enough to avoid same-file conflicts. Implementation and its focused tests belong in the same task unless they can truly run against an already merged implementation. A final verifier, reviewer, report, or integration task must depend on every change it evaluates. Include concrete acceptance criteria and do not invent progress or completed work. Mark only synthesis, report, review, comparison, analysis, plan, or dashboard tasks as human-facing HTML work; evidence collection should retain native formats. For every task, provide estimatedTokenBudget. Avoid duplicate investigation and unnecessary coordination. Verification must derive boundary and invalid-input checks from the request instead of merely rerunning visible happy-path tests.\n\nREQUEST\n${mission.sourcePrompt || mission.outcome}\n\nDESIRED OUTCOME\n${mission.outcome}\n\nEXECUTION BUDGET\nTotal estimated token budget: ${mission.tokenBudget || 80000}.\n\n${FAST_EXECUTION_CONTRACT}`;
 }
 
 const missionPlanSchema = {
@@ -72,14 +71,12 @@ const missionPlanSchema = {
       type: "array", minItems: 1, maxItems: 12,
       items: {
         type: "object", additionalProperties: false,
-        required: ["key", "title", "description", "agentRole", "dependencies", "acceptanceCriteria", "valueScore", "estimatedTokenBudget", "valueRationale"],
+        required: ["key", "title", "description", "agentRole", "dependencies", "acceptanceCriteria", "estimatedTokenBudget"],
         properties: {
           key: { type: "string" }, title: { type: "string" }, description: { type: "string" }, agentRole: { type: "string" },
           dependencies: { type: "array", items: { type: "string" } },
           acceptanceCriteria: { type: "array", minItems: 1, items: { type: "string" } },
-          valueScore: { type: "integer", minimum: 1, maximum: 5, description: "Expected marginal value if this task succeeds; 5 is highest." },
           estimatedTokenBudget: { type: "integer", minimum: 500, maximum: 100000, description: "Estimated total token budget for this worker task." },
-          valueRationale: { type: "string", description: "Why this task is worth its estimated token cost." },
         },
       },
     },
@@ -143,11 +140,7 @@ function normalizePlan(raw) {
     agentRole: String(task.agentRole || "Worker").trim(),
     dependencies: [...new Set((task.dependencies || []).map((item) => normalizeKey(item, "INVALID-DEPENDENCY")))],
     acceptanceCriteria: (task.acceptanceCriteria || []).map(String).map((item) => item.trim()).filter(Boolean),
-    value: {
-      score: Math.max(1, Math.min(5, Number(task.valueScore || task.value?.score || 3))),
-      estimatedTokenBudget: Math.max(500, Math.min(100000, Number(task.estimatedTokenBudget || task.value?.estimatedTokenBudget || 6000))),
-      rationale: String(task.valueRationale || task.value?.rationale || "Completes a required Mission checkpoint.").trim().slice(0, 600),
-    },
+    estimatedTokenBudget: Math.max(500, Math.min(100000, Number(task.estimatedTokenBudget || task.value?.estimatedTokenBudget || 6000))),
   }));
   const keys = new Set(tasks.map((task) => task.key));
   if (keys.size !== tasks.length) throw new Error("The generated plan contains duplicate task keys");
@@ -181,7 +174,7 @@ function normalizeAdditionalTasks(mission, rawTasks) {
   const existing = mission.tasks.map((task) => ({
     key: task.key, title: task.title, description: task.description, agentRole: task.agentRole,
     dependencies: task.dependencies, acceptanceCriteria: task.acceptanceCriteria,
-    valueScore: task.value?.score, estimatedTokenBudget: task.value?.estimatedTokenBudget, valueRationale: task.value?.rationale,
+    estimatedTokenBudget: task.estimatedTokenBudget,
   }));
   const combined = normalizePlan({
     title: mission.spec?.title || mission.title,
@@ -217,7 +210,7 @@ Inspect the implementation and tests, make the smallest correct patch, add focus
     ? "Use the workspace tools only when necessary. Writes, selected verification commands, Git stage, and Git commit always stop for visible, one-time human approval. Use workspace_git to inspect the assigned worktree; Agent Deck creates and assigns worktrees, so never attempt to create or remove one yourself. Your final structured result is persisted automatically; do not claim cross-agent messages or published artifacts that you cannot create."
     : "Use agentdeck.send_message for coordination and agentdeck.publish_artifact for reusable findings.";
   const artifactContract = route.reportTask ? HTML_FIRST_DELIVERABLE : NATIVE_ARTIFACT_CONTRACT;
-  return `You are the ${task.agentRole} worker for an Agent Deck mission.\n\nMISSION OUTCOME\n${mission.outcome}\n\nYOUR TASK ${task.key}: ${task.title}\n${task.description}\n\nVALUE INTENT\nExpected marginal value: ${task.value?.score || 3}/5. Estimated token budget: ${task.value?.estimatedTokenBudget || 6000}. Rationale: ${task.value?.rationale || "Complete a required Mission checkpoint."}\n\nACCEPTANCE CRITERIA\n${task.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nDEPENDENCIES\n${task.dependencies.length ? task.dependencies.join(", ") : "None"}\n\n${kernel}${mergeRecovery}\n\n${FAST_EXECUTION_CONTRACT}\nPerformance route: ${route.id}; reasoning effort: ${route.effort}; tool-batch target: at most ${route.maxToolBatches}.\n\n${artifactContract}\n\n${mission.executionMode === "research" ? "Create research and document deliverables only in the provided managed worktree. Inspect reference material read-only, verify sources, and report evidence." : "Work only inside the provided worktree. Inspect the code, implement the task, run relevant verification, and report evidence."} ${coordination} Do not claim success without command, test, diff, or file evidence.`;
+  return `You are the ${task.agentRole} worker for an Agent Deck mission.\n\nMISSION OUTCOME\n${mission.outcome}\n\nYOUR TASK ${task.key}: ${task.title}\n${task.description}\n\nEXECUTION BUDGET\nEstimated token budget: ${task.estimatedTokenBudget || 6000}.\n\nACCEPTANCE CRITERIA\n${task.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}\n\nDEPENDENCIES\n${task.dependencies.length ? task.dependencies.join(", ") : "None"}\n\n${kernel}${mergeRecovery}\n\n${FAST_EXECUTION_CONTRACT}\nPerformance route: ${route.id}; reasoning effort: ${route.effort}; tool-batch target: at most ${route.maxToolBatches}.\n\n${artifactContract}\n\n${mission.executionMode === "research" ? "Create research and document deliverables only in the provided managed worktree. Inspect reference material read-only, verify sources, and report evidence." : "Work only inside the provided worktree. Inspect the code, implement the task, run relevant verification, and report evidence."} ${coordination} Do not claim success without command, test, diff, or file evidence.`;
 }
 
 class MissionOrchestrator extends EventEmitter {
@@ -277,7 +270,7 @@ class MissionOrchestrator extends EventEmitter {
         cwd: requirement.workspacePath,
         model: input.model || undefined,
         maxWorkers: input.maxWorkers || 4,
-        valueContract: requirement.valueContract,
+        tokenBudget: requirement.tokenBudget,
         executionMode: requirement.executionMode,
         projectId: requirement.projectId,
         orchestrationMode: input.orchestrationMode,
@@ -311,19 +304,7 @@ class MissionOrchestrator extends EventEmitter {
 
   contextBrief(input) { return this.store.contextBrief(input); }
 
-  valueLedger(missionId) { return this.store.valueLedger(missionId); }
-
-  updateValueContract(missionId, contract) {
-    const mission = this.store.updateValueContract(missionId, contract);
-    this.#emit(missionId);
-    return mission;
-  }
-
-  recordValue(missionId, input) {
-    const event = this.store.recordValue(missionId, input);
-    this.#emit(missionId);
-    return { event, ledger: this.store.valueLedger(missionId) };
-  }
+  usageSummary(missionId) { return this.store.usageSummary(missionId); }
 
   saveUiState(missionId, patch) {
     const result = this.store.saveUiState(missionId, patch);
@@ -436,12 +417,11 @@ class MissionOrchestrator extends EventEmitter {
       const completedKeys = new Set(mission.tasks.filter((task) => task.status === "completed").map((task) => task.key));
       const activeCount = mission.tasks.filter((task) => ["claiming", "running", "waiting_approval"].includes(task.status)).length;
       const slots = Math.max(0, mission.maxWorkers - activeCount);
-      const dispatchScore = (task) => Number(task.value?.score || 3) * 100000 / Math.max(500, Number(task.value?.estimatedTokenBudget || 6000));
-      const ready = mission.tasks.filter((task) => task.status === "queued" && task.dependencies.every((key) => completedKeys.has(key))).sort((left, right) => dispatchScore(right) - dispatchScore(left) || left.createdAt.localeCompare(right.createdAt)).slice(0, slots);
+      const ready = mission.tasks.filter((task) => task.status === "queued" && task.dependencies.every((key) => completedKeys.has(key))).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.key.localeCompare(right.key)).slice(0, slots);
       const runtime = this.#runtime(mission);
       for (const candidate of ready) {
         if (!this.store.claimTask(candidate.id)) continue;
-        this.store.appendEvent(missionId, "task.claimed", { taskKey: candidate.key, leaseOwner: "agent-deck-local-core", valueScore: candidate.value?.score || 3, estimatedTokenBudget: candidate.value?.estimatedTokenBudget || 6000, dispatchScore: Number(dispatchScore(candidate).toFixed(3)) }, { taskId: candidate.id });
+        this.store.appendEvent(missionId, "task.claimed", { taskKey: candidate.key, leaseOwner: "agent-deck-local-core", estimatedTokenBudget: candidate.estimatedTokenBudget || 6000, dispatchPolicy: "dependency_ready_fifo" }, { taskId: candidate.id });
         this.#emit(missionId);
         try {
           const latestTask = this.store.getTask(candidate.id);
@@ -732,7 +712,7 @@ class MissionOrchestrator extends EventEmitter {
       if (acceptsLatePlan) {
         try {
           const route = classifyMissionRequest({ ...mission, orchestrationMode: "mission" });
-          const spec = optimizeMissionPlan(normalizePlan(parseStructuredText(item.text)), route, mission.valueContract?.tokenBudget);
+          const spec = optimizeMissionPlan(normalizePlan(parseStructuredText(item.text)), route, mission.tokenBudget);
           this.store.savePlan(mission.id, spec);
           this.store.appendEvent(mission.id, "mission.plan.optimized", { route: route.tier, taskCount: spec.tasks.length, repairedDependencyEdges: spec.runtime.repairedDependencyEdges, plannedTaskTokens: spec.runtime.plannedTaskTokens, tokenBudget: spec.runtime.tokenBudget }, { threadId });
           this.store.addArtifact({ missionId: mission.id, title: "Generated requirement candidate", summary: spec.outcome, files: [], verificationStatus: "generated", sourceThreadId: threadId });

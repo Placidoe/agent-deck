@@ -123,12 +123,7 @@ async function main() {
     cwd: repository,
     orchestrationMode: "adaptive",
     executionMode: "code",
-    valueContract: {
-      scenario: "研发交付基准评测",
-      valueType: "time_saved",
-      targetMetric: "Public and hidden S1 checks pass",
-      tokenBudget: 20000,
-    },
+    tokenBudget: 20000,
   });
 
   assert.equal(mission.spec?.runtime?.mode, "direct", `${caseId} must route to Direct mode`);
@@ -157,7 +152,7 @@ async function main() {
   const publicTotal = countTotalTests(`${publicChecks.stdout}\n${publicChecks.stderr}`) || 3;
   const hiddenTotal = countTotalTests(`${hiddenChecks.stdout}\n${hiddenChecks.stderr}`) || 7;
   const greenMs = Math.round(performance.now() - clockStart);
-  const ledger = store.valueLedger(mission.id);
+  const ledger = store.usageSummary(mission.id);
   const deterministicScore = Number((((hiddenPassed / hiddenTotal) * 45) + ((publicPassed / publicTotal) * 20) + (publicChecks.status === 0 ? 15 : 0)).toFixed(1));
   const diff = run("/usr/bin/git", ["diff", `${seedCommit}..HEAD`, "--", "src", "test"], { cwd: gradePath });
   const missionCreatedAt = eventTime(completed.events, "mission.created");
@@ -190,10 +185,10 @@ async function main() {
       humanTouches: 1 + approvalCount,
       workerCount: completed.tasks.filter((item) => item.agentThreadId).length,
       plannerTurns: completed.events.filter((event) => event.type === "planner.turn.started").length,
-      providerTokens: ledger.costs.tokenSource === "provider_reported" ? ledger.costs.billedTokens : null,
-      providerUsage: ledger.costs.tokenSource === "provider_reported" ? ledger.costs.providerUsage : null,
-      estimatedTokens: ledger.costs.tokenSource === "local_estimate" ? ledger.costs.estimatedTokens : null,
-      tokenSource: ledger.costs.tokenSource,
+      providerTokens: ledger.usage.tokenSource === "provider_reported" ? ledger.usage.observedTokens : null,
+      providerUsage: ledger.usage.tokenSource === "provider_reported" ? ledger.usage.providerUsage : null,
+      estimatedTokens: ledger.usage.tokenSource === "local_estimate" ? ledger.usage.estimatedTokens : null,
+      tokenSource: ledger.usage.tokenSource,
       recordedEvents: completed.events.length,
       phases: {
         controlPlaneSec: durationSeconds(missionCreatedAt, workerStartedAt),

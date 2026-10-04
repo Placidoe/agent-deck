@@ -46,19 +46,16 @@ function numberInRange(value, fallback, minimum, maximum) {
   return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
 }
 
-function normalizeValueContract(input = {}) {
-  return {
-    scenario: String(input.scenario || "研发交付").trim().slice(0, 80) || "研发交付",
-    valueType: ["time_saved", "revenue", "risk_avoided", "decision_speed", "knowledge_reuse"].includes(input.valueType) ? input.valueType : "time_saved",
-    owner: String(input.owner || "").trim().slice(0, 80),
-    targetMetric: String(input.targetMetric || "").trim().slice(0, 180),
-    expectedValueCny: numberInRange(input.expectedValueCny, 0, 0, 100000000),
-    baselineHours: numberInRange(input.baselineHours, 0, 0, 100000),
-    humanHourlyRateCny: numberInRange(input.humanHourlyRateCny, 300, 0, 100000),
-    tokenBudget: Math.round(numberInRange(input.tokenBudget, 80000, 1000, 5000000)),
-    tokenCostPer1kCny: numberInRange(input.tokenCostPer1kCny, 0.02, 0, 1000),
-    deadline: String(input.deadline || "").trim().slice(0, 40),
-  };
+function normalizeTokenBudget(value, fallback = 80000, minimum = 1000) {
+  return Math.round(numberInRange(value ?? fallback, fallback, minimum, 5000000));
+}
+
+// Historical plans remain readable, but financial scoring is no longer exposed.
+function budgetOnlyPlan(spec) {
+  if (!spec || !Array.isArray(spec.tasks)) return spec;
+  return { ...spec, tasks: spec.tasks.map(({ value, valueScore, valueRationale, ...task }) => ({
+    ...task, estimatedTokenBudget: normalizeTokenBudget(task.estimatedTokenBudget ?? value?.estimatedTokenBudget, 6000, 500),
+  })) };
 }
 
 function trajectoryText(node) {
@@ -96,7 +93,7 @@ class MissionStore {
         main_thread_id TEXT,
         active_turn_id TEXT,
         spec_json TEXT,
-        value_contract_json TEXT,
+        token_budget INTEGER,
         error TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -187,16 +184,6 @@ class MissionStore {
       CREATE INDEX IF NOT EXISTS idx_runs_mission ON mission_runs(mission_id, started_at DESC);
       CREATE INDEX IF NOT EXISTS idx_runs_task ON mission_runs(task_id, started_at DESC);
       CREATE INDEX IF NOT EXISTS idx_runs_turn ON mission_runs(thread_id, turn_id);
-      CREATE TABLE IF NOT EXISTS mission_value_events (
-        id TEXT PRIMARY KEY,
-        mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
-        event_type TEXT NOT NULL,
-        amount_cny REAL NOT NULL DEFAULT 0,
-        note TEXT NOT NULL DEFAULT '',
-        source TEXT NOT NULL DEFAULT 'user',
-        created_at TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_value_events_mission ON mission_value_events(mission_id, created_at DESC);
       CREATE TABLE IF NOT EXISTS mission_ui_state (
         mission_id TEXT PRIMARY KEY REFERENCES missions(id) ON DELETE CASCADE,
         layout_json TEXT NOT NULL DEFAULT '{}',
@@ -222,7 +209,7 @@ class MissionStore {
         status TEXT NOT NULL DEFAULT 'inbox',
         labels_json TEXT NOT NULL DEFAULT '[]',
         acceptance_json TEXT NOT NULL DEFAULT '[]',
-        value_contract_json TEXT NOT NULL DEFAULT '{}',
+        token_budget INTEGER,
         mission_id TEXT REFERENCES missions(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -280,7 +267,7 @@ class MissionStore {
     this.#ensureColumn("missions", "integration_path", "TEXT");
     this.#ensureColumn("missions", "integration_branch", "TEXT");
     this.#ensureColumn("missions", "integration_commit", "TEXT");
-    this.#ensureColumn("missions", "value_contract_json", "TEXT");
+    this.#ensureColumn("missions", "token_budget", "INTEGER");
     this.#ensureColumn("missions", "execution_mode", "TEXT NOT NULL DEFAULT 'code'");
     this.#ensureColumn("missions", "execution_cwd", "TEXT");
     this.#ensureColumn("missions", "runtime_mode", "TEXT NOT NULL DEFAULT 'external'");
@@ -290,8 +277,9 @@ class MissionStore {
     this.#ensureColumn("artifacts", "quality_score", "INTEGER");
     this.#ensureColumn("artifacts", "quality_json", "TEXT");
     this.#ensureColumn("bus_messages", "error", "TEXT");
-    this.#ensureColumn("tasks", "value_json", "TEXT");
-    this.#ensureColumn("requirements", "value_contract_json", "TEXT");
+    this.#ensureColumn("tasks", "estimated_token_budget", "INTEGER");
+    this.#ensureColumn("requirements", "token_budget", "INTEGER");
+    this.#migrateLegacyBudgets();
     this.#ensureColumn("requirements", "execution_mode", "TEXT NOT NULL DEFAULT 'code'");
     this.#ensureColumn("requirements", "project_id", "TEXT");
     this.#exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedupe ON mission_events(mission_id,dedupe_key) WHERE dedupe_key IS NOT NULL;");
@@ -309,15 +297,15 @@ class MissionStore {
       provider: input.provider || "codex", model: input.model || null,
       runtimeMode: input.runtimeMode || "external",
       projectId: this.personal.assertProject(input.projectId, { active: true }),
-      valueContract: normalizeValueContract(input.valueContract),
+      tokenBudget: normalizeTokenBudget(input.tokenBudget),
       status: "planning", maxWorkers: Math.max(1, Math.min(8, input.maxWorkers || 4)),
       createdAt: now, updatedAt: now,
     };
     this.#exec(`INSERT INTO missions
-      (id,title,outcome,source_prompt,cwd,provider,runtime_mode,model,status,max_workers,value_contract_json,created_at,updated_at,project_id)
-      VALUES (${quote(mission.id)},${quote(mission.title)},${quote(mission.outcome)},${quote(mission.sourcePrompt)},${quote(mission.cwd)},${quote(mission.provider)},${quote(mission.runtimeMode)},${quote(mission.model)},${quote(mission.status)},${mission.maxWorkers},${json(mission.valueContract)},${quote(now)},${quote(now)},${quote(mission.projectId)});`);
+      (id,title,outcome,source_prompt,cwd,provider,runtime_mode,model,status,max_workers,token_budget,created_at,updated_at,project_id)
+      VALUES (${quote(mission.id)},${quote(mission.title)},${quote(mission.outcome)},${quote(mission.sourcePrompt)},${quote(mission.cwd)},${quote(mission.provider)},${quote(mission.runtimeMode)},${quote(mission.model)},${quote(mission.status)},${mission.maxWorkers},${quote(mission.tokenBudget)},${quote(now)},${quote(now)},${quote(mission.projectId)});`);
     this.updateMission(mission.id, { executionMode: input.executionMode || "code" });
-    this.appendEvent(mission.id, "mission.created", { title: mission.title, provider: mission.provider, runtimeMode: mission.runtimeMode, executionMode: input.executionMode || "code", valueScenario: mission.valueContract.scenario, tokenBudget: mission.valueContract.tokenBudget });
+    this.appendEvent(mission.id, "mission.created", { title: mission.title, provider: mission.provider, runtimeMode: mission.runtimeMode, executionMode: input.executionMode || "code", tokenBudget: mission.tokenBudget });
     return this.getMission(mission.id);
   }
 
@@ -335,12 +323,12 @@ class MissionStore {
       status: "status", mainThreadId: "main_thread_id", activeTurnId: "active_turn_id",
       spec: "spec_json", error: "error", model: "model", integrationPath: "integration_path",
       integrationBranch: "integration_branch", integrationCommit: "integration_commit",
-      valueContract: "value_contract_json",
+      tokenBudget: "token_budget",
       executionMode: "execution_mode", executionCwd: "execution_cwd",
       runtimeMode: "runtime_mode",
     };
     const values = Object.entries(patch).filter(([key]) => columns[key]).map(([key, value]) => {
-      return `${columns[key]}=${key === "spec" || key === "valueContract" ? json(key === "valueContract" ? normalizeValueContract(value) : value) : quote(value)}`;
+      return `${columns[key]}=${key === "spec" ? json(budgetOnlyPlan(value)) : quote(key === "tokenBudget" ? normalizeTokenBudget(value) : value)}`;
     });
     if (!values.length) return this.getMission(id);
     values.push(`updated_at=${quote(new Date().toISOString())}`);
@@ -348,37 +336,9 @@ class MissionStore {
     return this.getMission(id);
   }
 
-  updateValueContract(missionId, contract) {
-    if (!this.getMissionRecord(missionId)) throw new Error("Mission not found");
-    const valueContract = normalizeValueContract(contract);
-    this.updateMission(missionId, { valueContract });
-    this.appendEvent(missionId, "value.contract.updated", {
-      scenario: valueContract.scenario, valueType: valueContract.valueType,
-      expectedValueCny: valueContract.expectedValueCny, tokenBudget: valueContract.tokenBudget,
-    });
-    return this.getMission(missionId);
-  }
-
-  recordValue(missionId, input = {}) {
-    if (!this.getMissionRecord(missionId)) throw new Error("Mission not found");
-    const eventType = ["confirmed_value", "avoided_cost", "learning_asset", "manual_cost"].includes(input.eventType) ? input.eventType : "confirmed_value";
-    const amountCny = numberInRange(input.amountCny, 0, -100000000, 100000000);
-    const note = String(input.note || "").trim().slice(0, 1200);
-    if (!note) throw new Error("Add a short evidence note before recording value");
-    const event = { id: randomUUID(), missionId, eventType, amountCny, note, source: "user", createdAt: new Date().toISOString() };
-    this.#exec(`INSERT INTO mission_value_events (id,mission_id,event_type,amount_cny,note,source,created_at)
-      VALUES (${quote(event.id)},${quote(event.missionId)},${quote(event.eventType)},${quote(event.amountCny)},${quote(event.note)},${quote(event.source)},${quote(event.createdAt)});`);
-    this.appendEvent(missionId, "value.evidence.recorded", { eventType, amountCny, note: compactText(note, 180) });
-    return event;
-  }
-
-  valueLedger(missionId) {
+  usageSummary(missionId) {
     const mission = this.getMission(missionId, { eventLimit: 500, messageLimit: 500, artifactLimit: 500 });
     if (!mission) throw new Error("Mission not found");
-    const contract = normalizeValueContract(mission.valueContract);
-    const valueEvents = this.#all(`SELECT * FROM mission_value_events WHERE mission_id=${quote(missionId)} ORDER BY created_at DESC;`).map((row) => ({
-      id: row.id, eventType: row.event_type, amountCny: Number(row.amount_cny || 0), note: row.note, source: row.source, createdAt: row.created_at,
-    }));
     const contextTokens = mission.events.filter((event) => event.type === "context.capsule.created").reduce((sum, event) => sum + Number(event.payload?.estimatedTokens || 0), 0);
     const recordedPlannerTokens = mission.events.filter((event) => event.type === "planner.turn.started").reduce((sum, event) => sum + Number(event.payload?.promptEstimatedTokens || 0), 0);
     const plannerTokens = recordedPlannerTokens || (mission.spec?.runtime?.plannerSkipped ? 0 : estimateTokens(`${mission.sourcePrompt}\n${mission.outcome}\n${JSON.stringify(mission.spec || {})}`));
@@ -421,20 +381,11 @@ class MissionStore {
       reasoningOutputTokens: sum.reasoningOutputTokens + usage.reasoningOutputTokens,
     }), { totalTokens: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 });
     const observedTokens = providerUsage.totalTokens;
-    const billedTokens = observedTokens > 0 ? observedTokens : estimatedTokens;
-    const estimatedModelCostCny = Number((billedTokens / 1000 * contract.tokenCostPer1kCny).toFixed(4));
-    const plannedValueCny = contract.expectedValueCny || Number((contract.baselineHours * contract.humanHourlyRateCny).toFixed(2));
-    const confirmedValueCny = Number(valueEvents.filter((event) => event.eventType !== "manual_cost").reduce((sum, event) => sum + event.amountCny, 0).toFixed(2));
-    const manualCostCny = Number(Math.abs(valueEvents.filter((event) => event.eventType === "manual_cost").reduce((sum, event) => sum + event.amountCny, 0)).toFixed(2));
-    const totalCostCny = Number((estimatedModelCostCny + manualCostCny).toFixed(4));
-    const realizedRoi = totalCostCny > 0 && confirmedValueCny > 0 ? Number(((confirmedValueCny - totalCostCny) / totalCostCny).toFixed(2)) : null;
-    const projectedRoi = totalCostCny > 0 && plannedValueCny > 0 ? Number(((plannedValueCny - totalCostCny) / totalCostCny).toFixed(2)) : null;
-    const verifiedArtifacts = mission.artifacts.filter((artifact) => artifact.verificationStatus === "user_verified").length;
+    const accountedTokens = observedTokens > 0 ? observedTokens : estimatedTokens;
     return {
-      missionId, contract, valueEvents,
-      costs: { estimatedTokens, observedTokens, billedTokens, tokenSource: observedTokens > 0 ? "provider_reported" : "local_estimate", providerUsage, plannerTokens, workerPromptTokens, contextTokens, outputTokens, coordinationTokens, estimatedModelCostCny, manualCostCny, totalCostCny, tokenBudgetRemaining: Math.max(0, contract.tokenBudget - billedTokens) },
-      value: { plannedValueCny, confirmedValueCny, projectedRoi, realizedRoi, verifiedArtifacts, completedTasks: mission.tasks.filter((task) => task.status === "completed").length, totalTasks: mission.tasks.length },
-      disclaimer: observedTokens > 0 ? "Token usage is reported by the active provider where available; cost still uses your locally configured rate. Confirmed value is recorded only from your evidence entries." : "Token and model cost are local estimates using your configured rate. Confirmed value is recorded only from your evidence entries.",
+      missionId, tokenBudget: mission.tokenBudget,
+      usage: { estimatedTokens, observedTokens, accountedTokens, tokenSource: observedTokens > 0 ? "provider_reported" : "local_estimate", providerUsage, plannerTokens, workerPromptTokens, contextTokens, outputTokens, coordinationTokens, tokenBudgetRemaining: Math.max(0, mission.tokenBudget - accountedTokens) },
+      disclaimer: observedTokens > 0 ? "Token usage is provider-reported for observed turns; local estimates are not billing data." : "Token usage is a local estimate, not measured consumption or billing data.",
     };
   }
 
@@ -446,8 +397,8 @@ class MissionStore {
     ];
     for (const task of spec.tasks) {
       statements.push(`INSERT INTO tasks
-        (id,mission_id,task_key,title,description,agent_role,status,phase,dependencies_json,acceptance_json,value_json,evidence_json,created_at,updated_at)
-        VALUES (${quote(randomUUID())},${quote(missionId)},${quote(task.key)},${quote(task.title)},${quote(task.description)},${quote(task.agentRole)},'queued','ready',${json(task.dependencies)},${json(task.acceptanceCriteria)},${json(task.value)},'[]',${quote(now)},${quote(now)});`);
+        (id,mission_id,task_key,title,description,agent_role,status,phase,dependencies_json,acceptance_json,estimated_token_budget,evidence_json,created_at,updated_at)
+        VALUES (${quote(randomUUID())},${quote(missionId)},${quote(task.key)},${quote(task.title)},${quote(task.description)},${quote(task.agentRole)},'queued','ready',${json(task.dependencies)},${json(task.acceptanceCriteria)},${quote(normalizeTokenBudget(task.estimatedTokenBudget, 6000, 500))},'[]',${quote(now)},${quote(now)});`);
     }
     this.#transaction(statements);
     this.appendEvent(missionId, "mission.plan.ready", { taskCount: spec.tasks.length });
@@ -473,11 +424,11 @@ class MissionStore {
     for (const task of spec.tasks) {
       const current = currentByKey.get(task.key);
       if (current) {
-        statements.push(`UPDATE tasks SET title=${quote(task.title)},description=${quote(task.description)},agent_role=${quote(task.agentRole)},dependencies_json=${json(task.dependencies)},acceptance_json=${json(task.acceptanceCriteria)},value_json=${json(task.value)},updated_at=${quote(now)} WHERE id=${quote(current.id)};`);
+        statements.push(`UPDATE tasks SET title=${quote(task.title)},description=${quote(task.description)},agent_role=${quote(task.agentRole)},dependencies_json=${json(task.dependencies)},acceptance_json=${json(task.acceptanceCriteria)},estimated_token_budget=${quote(normalizeTokenBudget(task.estimatedTokenBudget, 6000, 500))},updated_at=${quote(now)} WHERE id=${quote(current.id)};`);
       } else {
         statements.push(`INSERT INTO tasks
-          (id,mission_id,task_key,title,description,agent_role,status,phase,dependencies_json,acceptance_json,value_json,evidence_json,created_at,updated_at)
-          VALUES (${quote(randomUUID())},${quote(missionId)},${quote(task.key)},${quote(task.title)},${quote(task.description)},${quote(task.agentRole)},'queued','ready',${json(task.dependencies)},${json(task.acceptanceCriteria)},${json(task.value)},'[]',${quote(now)},${quote(now)});`);
+          (id,mission_id,task_key,title,description,agent_role,status,phase,dependencies_json,acceptance_json,estimated_token_budget,evidence_json,created_at,updated_at)
+          VALUES (${quote(randomUUID())},${quote(missionId)},${quote(task.key)},${quote(task.title)},${quote(task.description)},${quote(task.agentRole)},'queued','ready',${json(task.dependencies)},${json(task.acceptanceCriteria)},${quote(normalizeTokenBudget(task.estimatedTokenBudget, 6000, 500))},'[]',${quote(now)},${quote(now)});`);
       }
     }
     this.#transaction(statements);
@@ -559,8 +510,8 @@ class MissionStore {
     ];
     for (const task of tasks) {
       statements.push(`INSERT INTO tasks
-        (id,mission_id,task_key,title,description,agent_role,status,phase,dependencies_json,acceptance_json,value_json,evidence_json,created_at,updated_at)
-        VALUES (${quote(randomUUID())},${quote(missionId)},${quote(task.key)},${quote(task.title)},${quote(task.description)},${quote(task.agentRole)},'queued','ready',${json(task.dependencies)},${json(task.acceptanceCriteria)},${json(task.value)},'[]',${quote(now)},${quote(now)});`);
+        (id,mission_id,task_key,title,description,agent_role,status,phase,dependencies_json,acceptance_json,estimated_token_budget,evidence_json,created_at,updated_at)
+        VALUES (${quote(randomUUID())},${quote(missionId)},${quote(task.key)},${quote(task.title)},${quote(task.description)},${quote(task.agentRole)},'queued','ready',${json(task.dependencies)},${json(task.acceptanceCriteria)},${quote(normalizeTokenBudget(task.estimatedTokenBudget, 6000, 500))},'[]',${quote(now)},${quote(now)});`);
     }
     this.#transaction(statements);
     this.appendEvent(missionId, "mission.tasks.appended", { taskKeys: tasks.map((task) => task.key), taskCount: tasks.length });
@@ -738,9 +689,9 @@ class MissionStore {
     const priority = ["urgent", "high", "medium", "low"].includes(input.priority) ? input.priority : "medium";
     const status = ["inbox", "ready_to_plan"].includes(input.status) ? input.status : "inbox";
     const now = new Date().toISOString();
-    const requirement = { id: randomUUID(), title, outcome, body, sourceType: input.sourceType || "local", sourceRef: input.sourceRef || null, workspacePath, priority, status, labels: Array.isArray(input.labels) ? input.labels.filter(Boolean).slice(0, 12) : [], acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria.filter(Boolean).slice(0, 20) : [], valueContract: normalizeValueContract(input.valueContract), createdAt: now, updatedAt: now };
-    this.#exec(`INSERT INTO requirements (id,title,outcome,body,source_type,source_ref,workspace_path,priority,status,labels_json,acceptance_json,value_contract_json,created_at,updated_at)
-      VALUES (${quote(requirement.id)},${quote(requirement.title)},${quote(requirement.outcome)},${quote(requirement.body)},${quote(requirement.sourceType)},${quote(requirement.sourceRef)},${quote(requirement.workspacePath)},${quote(requirement.priority)},${quote(requirement.status)},${json(requirement.labels)},${json(requirement.acceptanceCriteria)},${json(requirement.valueContract)},${quote(now)},${quote(now)});`);
+    const requirement = { id: randomUUID(), title, outcome, body, sourceType: input.sourceType || "local", sourceRef: input.sourceRef || null, workspacePath, priority, status, labels: Array.isArray(input.labels) ? input.labels.filter(Boolean).slice(0, 12) : [], acceptanceCriteria: Array.isArray(input.acceptanceCriteria) ? input.acceptanceCriteria.filter(Boolean).slice(0, 20) : [], tokenBudget: normalizeTokenBudget(input.tokenBudget), createdAt: now, updatedAt: now };
+    this.#exec(`INSERT INTO requirements (id,title,outcome,body,source_type,source_ref,workspace_path,priority,status,labels_json,acceptance_json,token_budget,created_at,updated_at)
+      VALUES (${quote(requirement.id)},${quote(requirement.title)},${quote(requirement.outcome)},${quote(requirement.body)},${quote(requirement.sourceType)},${quote(requirement.sourceRef)},${quote(requirement.workspacePath)},${quote(requirement.priority)},${quote(requirement.status)},${json(requirement.labels)},${json(requirement.acceptanceCriteria)},${quote(requirement.tokenBudget)},${quote(now)},${quote(now)});`);
     this.#exec(`UPDATE requirements SET execution_mode=${quote(input.executionMode || "code")},project_id=${quote(projectId)} WHERE id=${quote(requirement.id)};`);
     return this.getRequirement(requirement.id);
   }
@@ -766,14 +717,14 @@ class MissionStore {
       sourceRef: patch.sourceRef === undefined ? current.sourceRef : patch.sourceRef, workspacePath: patch.workspacePath === undefined ? current.workspacePath : patch.workspacePath,
       priority: patch.priority === undefined ? current.priority : patch.priority, status: patch.status === undefined ? current.status : patch.status,
       labels: patch.labels === undefined ? current.labels : patch.labels, acceptanceCriteria: patch.acceptanceCriteria === undefined ? current.acceptanceCriteria : patch.acceptanceCriteria,
-      valueContract: patch.valueContract === undefined ? current.valueContract : normalizeValueContract(patch.valueContract),
+      tokenBudget: patch.tokenBudget === undefined ? current.tokenBudget : normalizeTokenBudget(patch.tokenBudget),
       missionId: patch.missionId === undefined ? current.missionId : patch.missionId,
     };
     if (!next.title || !next.outcome || !next.body || !next.workspacePath) throw new Error("Requirement fields cannot be empty");
     if (!allowedStatuses.has(next.status)) throw new Error("Unknown requirement status");
     if (!allowedPriorities.has(next.priority)) throw new Error("Unknown requirement priority");
     const now = new Date().toISOString();
-    this.#exec(`UPDATE requirements SET title=${quote(next.title)},outcome=${quote(next.outcome)},body=${quote(next.body)},source_type=${quote(next.sourceType)},source_ref=${quote(next.sourceRef)},workspace_path=${quote(next.workspacePath)},priority=${quote(next.priority)},status=${quote(next.status)},labels_json=${json(next.labels)},acceptance_json=${json(next.acceptanceCriteria)},value_contract_json=${json(next.valueContract)},mission_id=${quote(next.missionId)},updated_at=${quote(now)} WHERE id=${quote(id)};`);
+    this.#exec(`UPDATE requirements SET title=${quote(next.title)},outcome=${quote(next.outcome)},body=${quote(next.body)},source_type=${quote(next.sourceType)},source_ref=${quote(next.sourceRef)},workspace_path=${quote(next.workspacePath)},priority=${quote(next.priority)},status=${quote(next.status)},labels_json=${json(next.labels)},acceptance_json=${json(next.acceptanceCriteria)},token_budget=${quote(next.tokenBudget)},mission_id=${quote(next.missionId)},updated_at=${quote(now)} WHERE id=${quote(id)};`);
     return this.getRequirement(id);
   }
 
@@ -799,12 +750,12 @@ class MissionStore {
   listAttentionItems(options = {}) {
     const now = new Date().toISOString();
     const includeDeferred = Boolean(options.includeDeferred);
-    const missionRows = this.#all(`SELECT id,title,outcome,cwd,status,error,value_contract_json,updated_at
+    const missionRows = this.#all(`SELECT id,title,outcome,cwd,status,error,token_budget,updated_at
       FROM missions
       WHERE status IN ('ready','ready_to_integrate','integration_conflict','failed')
       ORDER BY updated_at DESC;`);
     const taskRows = this.#all(`SELECT t.id,t.mission_id,t.task_key,t.title,t.agent_role,t.status,t.phase,
-      t.dependencies_json,t.result_json,t.value_json,t.error,t.updated_at,m.title AS mission_title,m.cwd AS mission_cwd
+      t.dependencies_json,t.result_json,t.estimated_token_budget,t.error,t.updated_at,m.title AS mission_title,m.cwd AS mission_cwd
       FROM tasks t JOIN missions m ON m.id=t.mission_id
       WHERE t.status IN ('review','blocked','waiting_approval')
       ORDER BY t.updated_at DESC;`);
@@ -841,7 +792,6 @@ class MissionStore {
     const missionItems = missionRows.map((row) => {
       const [type, title, fallback, primaryLabel] = missionType[row.status];
       const basePriority = { ready: 58, ready_to_integrate: 68, integration_conflict: 95, failed: 88 }[row.status] || 50;
-      const contract = normalizeValueContract(parseJson(row.value_contract_json, {}));
       return {
         id: `${row.id}:${type}:mission`, type, severity: ["integration_conflict", "failed"].includes(row.status) ? "critical" : "medium",
         missionId: row.id, missionTitle: row.title, missionStatus: row.status, taskId: null, taskKey: null,
@@ -849,7 +799,7 @@ class MissionStore {
         title, reason: row.error || fallback, suggestedAction: primaryLabel, primaryLabel,
         workspace: row.cwd, panel: "result", tab: row.status === "ready" ? "spec" : "graph", updatedAt: row.updated_at,
         priority: basePriority, prioritySource: "derived", impact: 0, confidence: 100,
-        valueScore: 0, estimatedTokenBudget: contract.tokenBudget,
+        estimatedTokenBudget: normalizeTokenBudget(row.token_budget),
         whyNow: row.status === "ready" ? ["执行尚未开始", "需要确认任务计划"] : row.status === "integration_conflict" ? ["自动集成失败", "需要选择冲突处理方式"] : ["Mission 状态需要你的决定"],
       };
     });
@@ -860,7 +810,6 @@ class MissionStore {
     };
     const taskItems = taskRows.map((row) => {
       const result = parseJson(row.result_json, {});
-      const value = parseJson(row.value_json, { score: 3, estimatedTokenBudget: 6000 });
       const blockers = Array.isArray(result?.blockers) ? result.blockers.filter(Boolean) : [];
       const [type, title, fallback, primaryLabel] = taskType[row.status];
       const reason = row.error || blockers.join("; ") || (row.status === "review" && result?.summary) || fallback;
@@ -880,7 +829,7 @@ class MissionStore {
         workspace: row.mission_cwd, panel: row.status === "review" ? "result" : row.status === "waiting_approval" ? "conversation" : "evidence",
         tab: "graph", updatedAt: row.updated_at, priority: Math.min(100, basePriority + impact), prioritySource: "derived",
         impact: downstream, confidence: 100,
-        valueScore: Math.max(0, Math.min(5, Number(value.score || 0))), estimatedTokenBudget: Math.max(500, Number(value.estimatedTokenBudget || 6000)), whyNow,
+        estimatedTokenBudget: normalizeTokenBudget(row.estimated_token_budget, 6000, 500), whyNow,
       };
     });
     const stateRows = this.#all("SELECT attention_id,deferred_until FROM attention_state WHERE deferred_until IS NOT NULL;");
@@ -1257,7 +1206,7 @@ class MissionStore {
       projectId: row.project_id || null,
       mainThreadId: row.main_thread_id, activeTurnId: row.active_turn_id,
       executionMode: row.execution_mode || "code", executionCwd: row.execution_cwd || null,
-      spec: parseJson(row.spec_json, null), valueContract: normalizeValueContract(parseJson(row.value_contract_json, {})), error: row.error,
+      spec: budgetOnlyPlan(parseJson(row.spec_json, null)), tokenBudget: normalizeTokenBudget(row.token_budget), error: row.error,
       integrationPath: row.integration_path, integrationBranch: row.integration_branch, integrationCommit: row.integration_commit,
       createdAt: row.created_at, updatedAt: row.updated_at,
     };
@@ -1269,7 +1218,7 @@ class MissionStore {
       projectId: row.project_id || null,
       sourceType: row.source_type, sourceRef: row.source_ref, workspacePath: row.workspace_path,
       executionMode: row.execution_mode || "code",
-      priority: row.priority, status: row.status, labels: parseJson(row.labels_json, []), acceptanceCriteria: parseJson(row.acceptance_json, []), valueContract: normalizeValueContract(parseJson(row.value_contract_json, {})),
+      priority: row.priority, status: row.status, labels: parseJson(row.labels_json, []), acceptanceCriteria: parseJson(row.acceptance_json, []), tokenBudget: normalizeTokenBudget(row.token_budget),
       missionId: row.mission_id, missionStatus: row.mission_status || null, missionTitle: row.mission_title || null,
       createdAt: row.created_at, updatedAt: row.updated_at,
     };
@@ -1280,7 +1229,7 @@ class MissionStore {
       id: row.id, missionId: row.mission_id, key: row.task_key, title: row.title, description: row.description,
       agentRole: row.agent_role, status: row.status, phase: row.phase,
       dependencies: parseJson(row.dependencies_json, []), acceptanceCriteria: parseJson(row.acceptance_json, []),
-      value: parseJson(row.value_json, { score: 3, estimatedTokenBudget: 6000, rationale: "未标注价值假设" }),
+      estimatedTokenBudget: normalizeTokenBudget(row.estimated_token_budget, 6000, 500),
       result: parseJson(row.result_json, null), evidence: parseJson(row.evidence_json, []),
       agentThreadId: row.agent_thread_id, activeTurnId: row.active_turn_id,
       worktreePath: row.worktree_path, branch: row.branch, commitHash: row.commit_hash, error: row.error,
@@ -1290,6 +1239,19 @@ class MissionStore {
 
   #transaction(statements) {
     this.#exec(`BEGIN IMMEDIATE;\n${statements.join("\n")}\nCOMMIT;`);
+  }
+
+  #migrateLegacyBudgets() {
+    // Copy only budget numbers once. Never delete old columns, ledger rows or user records.
+    for (const [table, legacy, destination, key, fallback, minimum] of [
+      ["missions", "value_contract_json", "token_budget", "tokenBudget", 80000, 1000],
+      ["requirements", "value_contract_json", "token_budget", "tokenBudget", 80000, 1000],
+      ["tasks", "value_json", "estimated_token_budget", "estimatedTokenBudget", 6000, 500],
+    ]) {
+      if (!this.#all(`PRAGMA table_info(${table});`).some(column => column.name === legacy)) continue;
+      const rows = this.#all(`SELECT id,${legacy} AS legacy_budget FROM ${table} WHERE ${destination} IS NULL;`);
+      if (rows.length) this.#transaction(rows.map(row => `UPDATE ${table} SET ${destination}=${quote(normalizeTokenBudget(parseJson(row.legacy_budget, {})?.[key], fallback, minimum))} WHERE id=${quote(row.id)} AND ${destination} IS NULL;`));
+    }
   }
 
   #ensureColumn(table, column, definition) {

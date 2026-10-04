@@ -43,7 +43,7 @@ function BriefingLens({ briefing, onOpen }) {
 
 export function AttentionCenter({ items, briefing, loading, error, onRefresh, onOpen, onDefer }) {
   const [lens, setLens] = useState(() => { try { return localStorage.getItem("agent-deck:attention-lens") || "focus"; } catch { return "focus"; } });
-  const [profile, setProfile] = useState(() => { try { return localStorage.getItem("agent-deck:attention-profile") || "flow"; } catch { return "flow"; } });
+  const [profile, setProfile] = useState(() => { try { const saved = localStorage.getItem("agent-deck:attention-profile"); return attentionProfiles.some(item => item.id === saved) ? saved : "flow"; } catch { return "flow"; } });
   const rankedItems = useMemo(() => rankAttention(items, profile), [items, profile]);
   const counts = useMemo(() => rankedItems.reduce((result, item) => { const group = typeMeta[item.type]?.group || "blocked"; result[group] = (result[group] || 0) + 1; return result; }, {}), [rankedItems]);
   const chooseLens = (nextLens) => { setLens(nextLens); try { localStorage.setItem("agent-deck:attention-lens", nextLens); } catch { /* local preference is optional */ } };

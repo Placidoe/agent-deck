@@ -42,4 +42,4 @@ S3 新版阶段分解：控制面 2.119 秒、Worker 63.105 秒、自动集成 3
 
 ## Token 真值进展
 
-2026-09-27 的真实 S1 复跑已验证 `thread/tokenUsage/updated` 能进入 Mission Value Ledger：`tokenSource=provider_reported`，本轮总 Token 为 30,847。账本按 turn 取最后累计值，避免把同一 turn 的多次增量事件重复相加，并分别记录 input、cached input、output 与 reasoning output。该样本也超过了 20,000 的计划预算，说明下一阶段必须实现运行中的 Token Budget Governor，而不能只展示预算。
+2026-09-27 的真实 S1 复跑已验证 `thread/tokenUsage/updated` 能进入 Mission Token 用量记录：`tokenSource=provider_reported`，本轮总 Token 为 30,847。账本按 turn 取最后累计值，避免把同一 turn 的多次增量事件重复相加，并分别记录 input、cached input、output 与 reasoning output。该样本也超过了 20,000 的计划预算，说明下一阶段必须实现运行中的 Token Budget Governor，而不能只展示预算。

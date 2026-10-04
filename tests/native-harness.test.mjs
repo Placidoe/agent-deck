@@ -103,7 +103,7 @@ test("planning-only native turn uses structural validation without claiming work
 }));
 
 test("unknown output-schema keywords and out-of-range values fail closed", () => {
-  assert.ok(validateOutput('{"valueScore":6}', { type: "object", properties: { valueScore: { type: "integer", maximum: 5 } } }).length);
+  assert.ok(validateOutput('{"retryLimit":6}', { type: "object", properties: { retryLimit: { type: "integer", maximum: 5 } } }).length);
   assert.ok(validateOutput('"x"', { type: "string", pattern: "^a$" }).length);
 });
 

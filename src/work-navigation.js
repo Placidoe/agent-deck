@@ -26,7 +26,7 @@ export function collectWork(requirements = [], missions = [], workspacePath) {
       projectId: mission.projectId || null,
       title: mission.title, outcome: mission.outcome, body: "", status: missionStatuses[mission.status] || "blocked",
       priority: "medium", updatedAt: mission.updatedAt, createdAt: mission.createdAt, workspacePath: mission.cwd,
-      executionWorkspace: mission.cwd, counts: mission.counts, valueContract: mission.valueContract, workSource: "mission" });
+      executionWorkspace: mission.cwd, counts: mission.counts, tokenBudget: mission.tokenBudget, workSource: "mission" });
   }
   return rows;
 }

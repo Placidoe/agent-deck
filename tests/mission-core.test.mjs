@@ -16,6 +16,7 @@ const { PublisherService } = require("../desktop/publisher-service.cjs");
 const { decodeGitPath } = require("../desktop/path-utils.cjs");
 const { assertStrictOutputSchema } = require("../desktop/structured-output-schema.cjs");
 const { missionPlanSchema, mainAgentFollowupSchema, taskResultSchema } = require("../desktop/mission-orchestrator.cjs");
+const { missionPlanningPrompt, taskPrompt } = require("../desktop/mission-orchestrator.cjs");
 const { CodexAppServer } = require("../desktop/codex-app-server.cjs");
 const { plannerPerformanceRoute, taskNeedsHtml, workerPerformanceRoute } = require("../desktop/mission-performance.cjs");
 const { buildDirectPlan, classifyMissionRequest, fitTaskBudgets, optimizeMissionPlan } = require("../desktop/adaptive-runtime.cjs");
@@ -24,7 +25,7 @@ test("all output contracts recursively satisfy strict object requirements", () =
   for (const schema of [missionPlanSchema, mainAgentFollowupSchema, taskResultSchema]) {
     assert.doesNotThrow(() => assertStrictOutputSchema(schema));
   }
-  for (const field of ["valueScore", "estimatedTokenBudget", "valueRationale"]) {
+  for (const field of ["estimatedTokenBudget"]) {
     const broken = structuredClone(missionPlanSchema);
     broken.properties.tasks.items.required = broken.properties.tasks.items.required.filter(key => key !== field);
     assert.throws(() => assertStrictOutputSchema(broken), new RegExp("tasks.items.*missing " + field));
@@ -44,12 +45,29 @@ test("Codex rejects an invalid output contract before starting any provider requ
   client.request = async (method, params) => { calls.push({ method, params }); return { turn: { id: "validated-turn" } }; };
   const broken = structuredClone(missionPlanSchema);
   broken.properties.tasks.items.required = ["key"];
-  await assert.rejects(client.sendTurn({ threadId: "test", prompt: "test", outputSchema: broken }), /valueScore/);
+  await assert.rejects(client.sendTurn({ threadId: "test", prompt: "test", outputSchema: broken }), /estimatedTokenBudget/);
   assert.deepEqual(calls, []);
   const turn = await client.sendTurn({ threadId: "test", prompt: "test", effort: "low", outputSchema: missionPlanSchema });
   assert.equal(turn.id, "validated-turn");
   assert.equal(calls[1].params.outputSchema, missionPlanSchema);
   assert.equal(calls[1].params.effort, "low");
+});
+
+test("planner and worker contracts keep budgets without ROI scoring or financial prompts", () => {
+  const plan = normalizePlan({ ...validPlan, tasks: validPlan.tasks.map(task => ({ ...task, valueScore: 5, valueRationale: "old", value: { score: 5, estimatedTokenBudget: 4321 } })) });
+  for (const task of plan.tasks) {
+    assert.equal(task.estimatedTokenBudget, 4321);
+    for (const key of ["value", "valueScore", "valueRationale"]) assert.equal(key in task, false);
+  }
+  for (const schema of [missionPlanSchema.properties.tasks.items, mainAgentFollowupSchema.properties.tasksToCreate.items]) {
+    assert.equal("valueScore" in schema.properties, false);
+    assert.equal("valueRationale" in schema.properties, false);
+    assert.ok(schema.required.includes("estimatedTokenBudget"));
+  }
+  const mission = { ...plan, tokenBudget: 16000, sourcePrompt: "Verify delivery" };
+  const planner = missionPlanningPrompt(mission);
+  assert.match(planner, /16000/);
+  for (const prompt of [planner, taskPrompt(mission, plan.tasks[0])]) assert.doesNotMatch(prompt, /ROI|VALUE CONTRACT|VALUE INTENT|marginal value|Expected value|valueScore|valueRationale/);
 });
 
 test("performance routing lowers routine evidence work without downgrading synthesis", () => {
@@ -73,18 +91,18 @@ test("adaptive routing skips orchestration for coherent code work and escalates 
   assert.equal(mission.mode, "mission");
   assert.ok(mission.maxTasks >= 4);
   assert.equal(classifyMissionRequest({ title: "Tiny fix", outcome: "Rename one field", orchestrationMode: "mission" }).mode, "mission");
-  const constrained = classifyMissionRequest({ title: "Architecture benchmark", outcome: "Research several runtimes", executionMode: "research", valueContract: { tokenBudget: 1000 } });
+  const constrained = classifyMissionRequest({ title: "Architecture benchmark", outcome: "Research several runtimes", executionMode: "research", tokenBudget: 1000 });
   assert.equal(constrained.maxTasks, 2);
   assert.equal(constrained.maxWorkers, 2);
 });
 
 test("direct plans preserve one context, quality checks, and the total token budget", () => {
-  const input = { title: "Fix date parser", outcome: "Reject numeric strings and preserve valid dates", valueContract: { tokenBudget: 12000 } };
+  const input = { title: "Fix date parser", outcome: "Reject numeric strings and preserve valid dates", tokenBudget: 12000 };
   const route = classifyMissionRequest(input);
   const plan = normalizePlan(buildDirectPlan(input, route));
   assert.equal(plan.runtime.mode, "direct");
   assert.equal(plan.tasks.length, 1);
-  assert.equal(plan.tasks[0].value.estimatedTokenBudget, 12000);
+  assert.equal(plan.tasks[0].estimatedTokenBudget, 12000);
   assert.match(plan.tasks[0].acceptanceCriteria.join(" "), /boundary|invalid-input/i);
 });
 
@@ -98,7 +116,7 @@ test("mission plan optimizer serializes verification behind implementation and e
   const optimized = optimizeMissionPlan(normalized, route, 12000);
   assert.deepEqual(optimized.tasks.find(task => task.key === "TEST").dependencies, ["IMPLEMENT"]);
   assert.deepEqual(optimized.tasks.find(task => task.key === "REVIEW").dependencies, ["IMPLEMENT", "TEST"]);
-  assert.ok(optimized.tasks.reduce((sum, task) => sum + task.value.estimatedTokenBudget, 0) <= 12000);
+  assert.ok(optimized.tasks.reduce((sum, task) => sum + task.estimatedTokenBudget, 0) <= 12000);
   assert.equal(optimized.runtime.repairedDependencyEdges, 3);
   assert.equal(fitTaskBudgets(normalized.tasks, 12000).length, 3);
 });
@@ -305,46 +323,80 @@ test("mission store persists structured missions, tasks, events, and messages", 
   assert.ok(fs.statSync(databasePath).size > 0);
 }));
 
-test("Value Ledger persists a value contract, local token-cost estimate, and user-confirmed value evidence", () => withTempDir((directory) => {
-  const store = new MissionStore(path.join(directory, "value-ledger.sqlite3"));
-  const mission = store.createMission({
-    title: "High value delivery", outcome: "Ship verified work", cwd: directory,
-    valueContract: { scenario: "研发交付", valueType: "time_saved", baselineHours: 4, humanHourlyRateCny: 300, tokenBudget: 12000, tokenCostPer1kCny: 0.05, targetMetric: "PR merged" },
-  });
+test("usage summary preserves telemetry without financial features", () => withTempDir((directory) => {
+  const store = new MissionStore(path.join(directory, "usage.sqlite3"));
+  const mission = store.createMission({ title: "Delivery", outcome: "Ship verified work", cwd: directory, tokenBudget: 12000 });
   store.savePlan(mission.id, normalizePlan(validPlan));
-  const task = store.getMission(mission.id).tasks[0];
-  store.updateTask(task.id, { result: { summary: "Implemented and tested", acceptance: [], changedFiles: ["src/app.ts"], blockers: [] } });
-  store.addMessage({ missionId: mission.id, fromAgent: "Core", toAgent: "Main Agent", topic: "handoff", text: "Verified output is ready." });
   store.appendEvent(mission.id, "context.capsule.created", { estimatedTokens: 1400 });
-  store.recordValue(mission.id, { eventType: "confirmed_value", amountCny: 1800, note: "PR merged and the owner confirmed the avoided implementation work." });
-  const ledger = store.valueLedger(mission.id);
-  assert.equal(ledger.contract.scenario, "研发交付");
-  assert.equal(ledger.value.confirmedValueCny, 1800);
-  assert.ok(ledger.costs.estimatedTokens >= 1400);
-  assert.ok(ledger.costs.totalCostCny > 0);
-  assert.ok(ledger.value.realizedRoi > 0);
-  assert.equal(ledger.valueEvents.length, 1);
+  const summary = store.usageSummary(mission.id);
+  assert.equal(mission.tokenBudget, 12000);
+  assert.equal(summary.usage.tokenSource, "local_estimate");
+  assert.ok(summary.usage.estimatedTokens >= 1400);
+  assert.equal("valueContract" in mission, false);
+  assert.equal("value" in summary, false);
+  assert.equal(typeof store.recordValue, "undefined");
+  assert.equal(typeof store.valueLedger, "undefined");
+  assert.equal("value" in store.getMission(mission.id).tasks[0], false);
+  const tables = JSON.parse(execFileSync("sqlite3", ["-json", store.databasePath, "SELECT name FROM sqlite_master WHERE type='table';"], { encoding: "utf8" }));
+  assert.equal(tables.some(row => row.name === "mission_value_events"), false);
+  store.close();
 }));
 
-test("Value Ledger uses the latest provider token update once per turn", () => withTempDir((directory) => {
+test("legacy ROI storage keeps historical records and migrates only budgets once", () => withTempDir((directory) => {
+  const databasePath = path.join(directory, "legacy.sqlite3");
+  let store = new MissionStore(databasePath);
+  const mission = store.createMission({ title: "Historical work", outcome: "Keep evidence", cwd: directory });
+  store.savePlan(mission.id, normalizePlan(validPlan));
+  const taskId = store.getMission(mission.id).tasks[0].id;
+  const requirement = store.createRequirement({ title: "Historical request", outcome: "Keep request", workspacePath: directory });
+  store.close();
+  execFileSync("sqlite3", [databasePath, `
+    ALTER TABLE missions ADD COLUMN value_contract_json TEXT;
+    ALTER TABLE requirements ADD COLUMN value_contract_json TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE tasks ADD COLUMN value_json TEXT;
+    UPDATE missions SET token_budget=NULL,value_contract_json='{"tokenBudget":12345,"expectedValueCny":999}' WHERE id='${mission.id}';
+    UPDATE requirements SET token_budget=NULL,value_contract_json='{"tokenBudget":23456,"baselineHours":8}' WHERE id='${requirement.id}';
+    UPDATE tasks SET estimated_token_budget=NULL,value_json='{"estimatedTokenBudget":3456,"score":5,"rationale":"old"}' WHERE id='${taskId}';
+    UPDATE missions SET spec_json='{"tasks":[{"key":"OLD","valueScore":5,"valueRationale":"old","value":{"score":5,"estimatedTokenBudget":3456}}]}' WHERE id='${mission.id}';
+    CREATE TABLE mission_value_events(id TEXT,mission_id TEXT,note TEXT);
+    INSERT INTO mission_value_events VALUES('history','${mission.id}','preserve');
+  `]);
+  store = new MissionStore(databasePath);
+  assert.equal(store.getMission(mission.id).tokenBudget, 12345);
+  assert.equal(store.getRequirement(requirement.id).tokenBudget, 23456);
+  assert.equal(store.getTask(taskId).estimatedTokenBudget, 3456);
+  assert.equal("value" in store.getTask(taskId), false);
+  const oldPlanTask = store.getMission(mission.id).spec.tasks[0];
+  assert.equal(oldPlanTask.estimatedTokenBudget, 3456);
+  assert.equal("value" in oldPlanTask, false);
+  assert.equal("valueScore" in oldPlanTask, false);
+  assert.equal("valueContract" in store.getRequirement(requirement.id), false);
+  store.updateMission(mission.id, { tokenBudget: 45678 }); store.close();
+  store = new MissionStore(databasePath);
+  assert.equal(store.getMission(mission.id).tokenBudget, 45678, "legacy budget must not overwrite subsequent edits");
+  assert.equal(execFileSync("sqlite3", [databasePath, "SELECT note FROM mission_value_events WHERE id='history';"], { encoding: "utf8" }).trim(), "preserve");
+  store.close();
+}));
+
+test("usage summary uses the latest provider token update once per turn", () => withTempDir((directory) => {
   const store = new MissionStore(path.join(directory, "provider-token-ledger.sqlite3"));
-  const mission = store.createMission({ title: "Measured", outcome: "Use provider truth", cwd: directory, valueContract: { tokenBudget: 50000 } });
+  const mission = store.createMission({ title: "Measured", outcome: "Use provider truth", cwd: directory, tokenBudget: 50000 });
   store.appendEvent(mission.id, "provider.thread/tokenUsage/updated", { threadId: "worker-1", turnId: "turn-1", tokenUsage: { last: { totalTokens: 100, inputTokens: 80, cachedInputTokens: 20, outputTokens: 20, reasoningOutputTokens: 5 } } }, { threadId: "worker-1" });
   store.appendEvent(mission.id, "provider.thread/tokenUsage/updated", { threadId: "worker-1", turnId: "turn-1", tokenUsage: { last: { totalTokens: 140, inputTokens: 100, cachedInputTokens: 30, outputTokens: 40, reasoningOutputTokens: 10 } } }, { threadId: "worker-1" });
   store.appendEvent(mission.id, "provider.thread/tokenUsage/updated", { threadId: "worker-1", turnId: "turn-2", tokenUsage: { last: { totalTokens: 60, inputTokens: 50, cachedInputTokens: 40, outputTokens: 10, reasoningOutputTokens: 2 } } }, { threadId: "worker-1" });
-  const ledger = store.valueLedger(mission.id);
-  assert.equal(ledger.costs.tokenSource, "provider_reported");
-  assert.equal(ledger.costs.observedTokens, 200);
-  assert.deepEqual(ledger.costs.providerUsage, { totalTokens: 200, inputTokens: 150, cachedInputTokens: 70, outputTokens: 50, reasoningOutputTokens: 12 });
-  assert.equal(ledger.costs.tokenBudgetRemaining, 49800);
+  const ledger = store.usageSummary(mission.id);
+  assert.equal(ledger.usage.tokenSource, "provider_reported");
+  assert.equal(ledger.usage.observedTokens, 200);
+  assert.deepEqual(ledger.usage.providerUsage, { totalTokens: 200, inputTokens: 150, cachedInputTokens: 70, outputTokens: 50, reasoningOutputTokens: 12 });
+  assert.equal(ledger.usage.tokenBudgetRemaining, 49800);
 }));
 
 test("requirement inbox persists a canonical requirement and follows linked Mission state", () => withTempDir((directory) => {
   const store = new MissionStore(path.join(directory, "requirements.sqlite3"));
-  const requirement = store.createRequirement({ title: "Improve planner", outcome: "A verified planner experience", body: "Add a real inbox and approval flow.", workspacePath: directory, priority: "high", status: "ready_to_plan", labels: ["product", "agent"], acceptanceCriteria: ["A requirement can create a Mission"], valueContract: { scenario: "研发交付", expectedValueCny: 1200, baselineHours: 4, tokenBudget: 16000 } });
+  const requirement = store.createRequirement({ title: "Improve planner", outcome: "A verified planner experience", body: "Add a real inbox and approval flow.", workspacePath: directory, priority: "high", status: "ready_to_plan", labels: ["product", "agent"], acceptanceCriteria: ["A requirement can create a Mission"], tokenBudget: 16000 });
   assert.equal(store.listRequirements()[0].id, requirement.id);
-  assert.equal(requirement.valueContract.expectedValueCny, 1200);
-  assert.equal(requirement.valueContract.tokenBudget, 16000);
+  assert.equal("valueContract" in requirement, false);
+  assert.equal(requirement.tokenBudget, 16000);
   const claimed = store.claimNextRequirement(directory);
   assert.equal(claimed.status, "planning");
   const mission = store.createMission({ title: requirement.title, outcome: requirement.outcome, cwd: directory });
@@ -752,7 +804,7 @@ test("adaptive direct mode skips the planner and auto-integrates after one human
     body: "Fix the parser and add focused regression tests.",
     workspacePath: repository,
     status: "ready_to_plan",
-    valueContract: { tokenBudget: 14000 },
+    tokenBudget: 14000,
   });
   const claimed = await orchestrator.claimNextRequirement({ requirementId: requirement.id });
   const created = claimed.mission;
@@ -781,9 +833,9 @@ test("adaptive direct mode skips the planner and auto-integrates after one human
   assert.ok(completed.integrationCommit);
   assert.ok(completed.events.some(event => event.type === "mission.direct.auto_integrating"));
   assert.equal(completed.events.filter(event => event.type === "planner.turn.started").length, 0);
-  const ledger = store.valueLedger(created.id);
-  assert.equal(ledger.costs.plannerTokens, 0);
-  assert.ok(ledger.costs.workerPromptTokens > 0);
+  const ledger = store.usageSummary(created.id);
+  assert.equal(ledger.usage.plannerTokens, 0);
+  assert.ok(ledger.usage.workerPromptTokens > 0);
   store.close();
 }));
 

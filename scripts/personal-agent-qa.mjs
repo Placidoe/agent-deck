@@ -35,9 +35,19 @@ try {
   await page.getByRole("button", { name: "为这个项目新建工作", exact: true }).click();
   await page.getByRole("textbox", { name: /一句话描述要做的事/ }).fill("QA · 发布方案");
   await page.getByRole("textbox", { name: /做到什么程度算完成/ }).fill("交付有证据的离线报告");
+  await page.getByRole("button", { name: /补充背景、链接或优先级/ }).click();
+  const budget = page.getByRole("spinbutton", { name: /Token 预算/ });
+  await budget.fill("16000");
+  assert.equal(await page.getByText("价值意图（可选）", { exact: true }).count(), 0);
+  assert.equal(await page.getByRole("spinbutton", { name: /预期价值|人工基线/ }).count(), 0);
+  assert.equal(await page.evaluate(() => typeof window.agentDeckDesktop.missions.recordValue), "undefined");
   await page.getByRole("checkbox", { name: /保存后立即生成计划/ }).uncheck();
   await page.getByRole("button", { name: "保存需求", exact: true }).click();
-  assert.equal((await page.evaluate(() => window.agentDeckDesktop.requirements.list()))[0].projectId, pid);
+  await page.locator(".requirement-composer").waitFor({ state: "hidden" });
+  const savedRequirement = (await page.evaluate(() => window.agentDeckDesktop.requirements.list()))[0];
+  assert.equal(savedRequirement.projectId, pid);
+  assert.equal(savedRequirement.tokenBudget, 16000);
+  assert.equal("valueContract" in savedRequirement, false);
   // Seed clearly labelled accepted QA evidence in the isolated ledger only.
   {
     const { MissionStore } = createRequire(import.meta.url)(`${root}/desktop/mission-store.cjs`);

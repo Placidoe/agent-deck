@@ -222,17 +222,9 @@ ipcMain.handle("providers:bridge-config", (_event, providerId) => {
 ipcMain.handle("missions:list", () => missionOrchestrator?.list() || []);
 ipcMain.handle("missions:attention", () => missionOrchestrator?.attention() || []);
 ipcMain.handle("missions:attention-briefing", () => missionOrchestrator?.attentionBriefing() || null);
-ipcMain.handle("missions:value-ledger", (_event, missionId) => {
+ipcMain.handle("missions:usage-summary", (_event, missionId) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
-  return missionOrchestrator.valueLedger(missionId);
-});
-ipcMain.handle("missions:update-value-contract", (_event, input) => {
-  if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
-  return missionOrchestrator.updateValueContract(input.missionId, input.contract || {});
-});
-ipcMain.handle("missions:record-value", (_event, input) => {
-  if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
-  return missionOrchestrator.recordValue(input.missionId, input);
+  return missionOrchestrator.usageSummary(missionId);
 });
 ipcMain.handle("missions:defer-attention", (_event, input) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
