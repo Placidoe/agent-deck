@@ -116,15 +116,13 @@ const mainAgentFollowupSchema = {
   },
 };
 
-const workerTools = [{
-  type: "namespace", name: "agentdeck",
-  description: "Durable coordination tools owned by the local Agent Deck mission.",
-  tools: [
-    { type: "function", name: "send_message", description: "Send a durable message to another task agent or the main agent.", inputSchema: { type: "object", additionalProperties: false, required: ["to", "topic", "message"], properties: { to: { type: "string" }, topic: { type: "string" }, message: { type: "string" } } } },
-    { type: "function", name: "publish_artifact", description: "Publish a useful result into the shared context pool. Human-facing reports use self-contained HTML and pass an editorial/data-visualization quality gate; raw evidence stays in native formats.", inputSchema: { type: "object", additionalProperties: false, required: ["title", "summary", "files", "verified"], properties: { title: { type: "string" }, summary: { type: "string" }, files: { type: "array", items: { type: "string" } }, verified: { type: "boolean" }, contentType: { type: "string", enum: ["report", "research", "analysis", "dashboard", "plan", "review", "dataset", "code", "reference", "other"] }, dataRich: { type: "boolean", description: "True only when the source evidence contains chartable numeric, chronological, categorical, or relationship data." } } } },
-    { type: "function", name: "list_context", description: "Read the current mission specification and shared artifacts.", inputSchema: { type: "object", additionalProperties: false, properties: {} } },
-  ],
-}];
+// App-server DynamicToolSpec is flat. Responses API namespace wrappers are
+// not accepted by thread/start, even though tools share the same namespace.
+const workerTools = [
+  { namespace: "agentdeck", name: "send_message", description: "Send a durable message to another task agent or the main agent.", inputSchema: { type: "object", additionalProperties: false, required: ["to", "topic", "message"], properties: { to: { type: "string" }, topic: { type: "string" }, message: { type: "string" } } } },
+  { namespace: "agentdeck", name: "publish_artifact", description: "Publish a useful result into the shared context pool. Human-facing reports use self-contained HTML and pass an editorial/data-visualization quality gate; raw evidence stays in native formats.", inputSchema: { type: "object", additionalProperties: false, required: ["title", "summary", "files", "verified"], properties: { title: { type: "string" }, summary: { type: "string" }, files: { type: "array", items: { type: "string" } }, verified: { type: "boolean" }, contentType: { type: "string", enum: ["report", "research", "analysis", "dashboard", "plan", "review", "dataset", "code", "reference", "other"] }, dataRich: { type: "boolean", description: "True only when the source evidence contains chartable numeric, chronological, categorical, or relationship data." } } } },
+  { namespace: "agentdeck", name: "list_context", description: "Read the current mission specification and shared artifacts.", inputSchema: { type: "object", additionalProperties: false, required: [], properties: {} } },
+];
 
 function parseStructuredText(text) {
   const source = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");

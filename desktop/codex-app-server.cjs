@@ -3,6 +3,7 @@ const { spawn, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const readline = require("node:readline");
 const { assertStrictOutputSchema } = require("./structured-output-schema.cjs");
+const { assertDynamicTools } = require("./dynamic-tool-schema.cjs");
 
 function resolveCodexBinary() {
   const candidates = [
@@ -184,6 +185,7 @@ class CodexAppServer extends EventEmitter {
   }
 
   async createThread({ cwd, title, model, dynamicTools, ephemeral = false, allowMutations = true }) {
+    assertDynamicTools(dynamicTools);
     await this.start();
     const selectedModel = await this.resolveModel(model);
     const started = await this.request("thread/start", {
