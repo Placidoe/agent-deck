@@ -196,6 +196,28 @@ class WorktreeManager {
     try { diffStat = runGit(["diff", "--stat", "HEAD"], worktreePath); } catch { diffStat = ""; }
     return { files: [...new Set(files)], diffStat, clean: files.length === 0 };
   }
+
+  fingerprint(worktreePath) {
+    // HEAD covers committed file content; diff covers tracked edits. Hash
+    // untracked outputs too: status/diff-stat alone cannot detect same-size edits.
+    const hash = createHash("sha256");
+    hash.update(runGit(["rev-parse", "HEAD"], worktreePath));
+    hash.update(runGitRaw(["diff", "--no-ext-diff", "--binary", "HEAD"], worktreePath));
+    hash.update(runGitRaw(["diff", "--cached", "--no-ext-diff", "--binary"], worktreePath));
+    const files = runGitRaw(["ls-files", "--others", "--exclude-standard", "-z"], worktreePath).split("\0").filter(Boolean).sort();
+    const buffer = Buffer.alloc(65536); let bytes = 0;
+    for (const relative of files) {
+      const file = path.join(worktreePath, relative); hash.update(relative + "\0");
+      const stat = fs.lstatSync(file);
+      if (stat.isSymbolicLink()) { hash.update(fs.readlinkSync(file)); continue; }
+      if (!stat.isFile()) throw new Error("Self-check cannot fingerprint a special output file");
+      if ((bytes += stat.size) > 256 * 1024 * 1024) throw new Error("Self-check untracked outputs exceed the 256 MiB inspection budget; commit large assets before review");
+      const fd = fs.openSync(file, "r");
+      try { let length; while ((length = fs.readSync(fd, buffer, 0, buffer.length, null))) hash.update(buffer.subarray(0, length)); }
+      finally { fs.closeSync(fd); }
+    }
+    return hash.digest("hex");
+  }
 }
 
 module.exports = { WorktreeManager, isAncestor, mergeDependencies, runGitRaw, slug };

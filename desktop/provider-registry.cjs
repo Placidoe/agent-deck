@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { manifestFor } = require("./adapter-host.cjs");
+const { interactionMode } = require("./execution-mode.cjs");
 
 const PROVIDERS = {
   codex: {
@@ -80,7 +81,7 @@ class ProviderRegistry {
   }
 
   runtimeSettings() {
-    return { mode: "external", externalProvider: "codex", modelProvider: "deepseek", ...this.config.runtime };
+    return { mode: "external", externalProvider: "codex", modelProvider: "deepseek", interactionMode: "manual", ...this.config.runtime };
   }
 
   saveRuntimeSettings(input = {}) {
@@ -89,7 +90,7 @@ class ProviderRegistry {
     if (!["codex", "claude_code", "trae"].includes(next.externalProvider)) throw new Error("Select an external coding agent");
     if (!["deepseek", "openai_compatible"].includes(next.modelProvider)) throw new Error("Select a model API for Agent Deck Harness");
     // Do not persist arbitrary renderer fields alongside encrypted credentials.
-    this.config.runtime = { mode: next.mode, externalProvider: next.externalProvider, modelProvider: next.modelProvider };
+    this.config.runtime = { mode: next.mode, externalProvider: next.externalProvider, modelProvider: next.modelProvider, interactionMode: interactionMode(next.interactionMode) };
     this.#write();
     return this.runtimeSettings();
   }
@@ -102,7 +103,8 @@ class ProviderRegistry {
     if (mode === "agent_deck" && PROVIDERS[provider]?.kind !== "api") throw new Error("Agent Deck Harness requires a model API, not a coding-agent session");
     if (mode === "external" && !["codex", "claude_code", "trae"].includes(provider)) throw new Error("Use Agent Deck Harness mode for new API missions");
     if (mode === "agent_deck" && !this.config.api?.[provider]?.verifiedAt) throw new Error("Save and verify the model API in Settings before starting Agent Deck Harness");
-    return { runtimeMode: mode, provider };
+    // Permission consent comes from host settings, never an arbitrary mission payload.
+    return { runtimeMode: mode, provider, interactionMode: interactionMode(settings.interactionMode) };
   }
 
   list() {

@@ -19,6 +19,8 @@
     "test:realtime": "../research/labs/grokbot-desktop/node_modules/.bin/electron scripts/smoke-realtime.cjs",
     "test:voice": "node --test tests/realtime-voice.test.mjs",
     "test:mission": "ELECTRON_RUN_AS_NODE=1 ../research/labs/grokbot-desktop/node_modules/.bin/electron --test tests/mission-core.test.mjs",
+    "test:autonomous": "ELECTRON_RUN_AS_NODE=1 ../research/labs/grokbot-desktop/node_modules/.bin/electron --test tests/autonomous-execution.test.mjs",
+    "test:autonomous:live": "ELECTRON_RUN_AS_NODE=1 ../research/labs/grokbot-desktop/node_modules/.bin/electron scripts/smoke-autonomous.cjs",
     "test:providers": "node --test tests/provider-registry.test.mjs",
     "test:adapters": "node --test tests/adapter-host.test.mjs",
     "test:native-harness": "node --test tests/native-harness.test.mjs",

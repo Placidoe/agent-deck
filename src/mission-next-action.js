@@ -39,7 +39,7 @@ export function nextMissionAction(mission) {
     primaryLabel: "查看准备方案", secondaryLabel: "查看活动", panel: "spec",
   };
   for (const status of taskPriority) {
-    const task = firstTask(mission, status);
+    const task = mission.interactionMode === "autonomous" && status === "review" ? null : firstTask(mission, status);
     if (!task) continue;
     if (status === "waiting_approval") return {
       kind: "approval", task, tone: "attention", icon: "approval",
@@ -66,6 +66,7 @@ export function nextMissionAction(mission) {
       primaryLabel: "审阅结果", secondaryLabel: "查看任务", panel: "result",
     };
   }
+  if (mission.interactionMode === "autonomous" && ["ready", "ready_to_integrate"].includes(mission.status)) return null;
   if (mission.status === "ready") return {
     kind: "plan", task: null, tone: "attention", icon: "plan",
     title: "执行计划已准备好，尚未启动 Worker",
@@ -78,7 +79,7 @@ export function nextMissionAction(mission) {
     detail: (mission.executionMode === "research" || mission.spec?.workspace?.strategy === "managed") ? "检查各任务的成果与证据，确认后汇总到独立成果工作区，不写回原目录。" : "检查最终结果、已验证证据和 Worktree 变更，再决定是否创建集成分支。",
     primaryLabel: (mission.executionMode === "research" || mission.spec?.workspace?.strategy === "managed") ? "审阅成果汇总" : "审阅集成", secondaryLabel: "查看产物", panel: "result",
   };
-  if (["integration_conflict", "failed"].includes(mission.status)) return {
+  if (["integration_conflict", "failed"].includes(mission.status) || mission.interactionMode === "autonomous" && mission.status === "blocked") return {
     kind: "recovery", task: null, tone: "attention", icon: "blocked",
     title: mission.status === "integration_conflict" ? "集成遇到真实冲突" : "Mission 需要恢复决策",
     detail: mission.error || "查看真实错误与保留证据，选择安全的下一步。",

@@ -202,9 +202,11 @@ ipcMain.handle("codex:realtime-stop", (_event, input) => codex.stopRealtime(inpu
 
 ipcMain.handle("providers:list", async () => providerRegistry?.status() || []);
 ipcMain.handle("runtime:get", () => providerRegistry?.runtimeSettings());
-ipcMain.handle("runtime:set", (_event, input) => {
-  if (!providerRegistry) throw new Error("Runtime settings are not ready");
-  const settings = providerRegistry.saveRuntimeSettings(input);
+ipcMain.handle("runtime:set", async (_event, input) => {
+  const settings = await require("./runtime-consent.cjs").saveRuntimeWithConsent(providerRegistry, input, async () => {
+    const result = await dialog.showMessageBox(mainWindow, { type: "warning", title: "开启自主执行？", message: "新工作将使用完整工具权限，不再逐步询问你", detail: "Agent 可以写文件、执行任意 Bash、联网和安装依赖。这不是安全沙箱，错误或不可信内容可能影响工作区以外的文件。计划审批、工具许可、结果验收和成果汇总将自动推进；主 Agent 用 low 思考强度只读自检，失败时最多自动修正两次。已有工作保持原模式，你随时可以停止任务。系统授权、组织限制、登录和验证码不会被绕过。仅在可信工作区使用。", buttons: ["保持人工确认", "开启自主执行"], defaultId: 0, cancelId: 0, noLink: true });
+    return result.response === 1;
+  });
   mainWindow?.webContents.send("runtime:changed", settings);
   return settings;
 });
@@ -508,5 +510,6 @@ app.on("before-quit", () => {
   if (missionReconcileTimer) clearInterval(missionReconcileTimer);
   codex.stop();
   promptPolish?.stop();
+  missionOrchestrator?.autonomous.stop();
   missionStore?.close();
 });

@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { runDebugCommand } = require("./terminal-service.cjs");
 const { USER_LANGUAGE_CONTRACT } = require("./user-language.cjs");
+const { preauthorizedTool } = require("./execution-mode.cjs");
 
 const MAX_TOOL_ROUNDS = 12;
 const MAX_FILE_BYTES = 96 * 1024;
@@ -36,7 +37,7 @@ function assertRelativePath(value, label = "path") {
   return candidate;
 }
 
-// API Workers never receive a general-purpose shell. The narrow set below is
+// Manual API Workers never receive a general-purpose shell. The narrow set below is
 // intentionally limited to common local verification commands. Every command
 // still needs a one-time user approval before it can run.
 function assertSelectedWorkspaceCommand(command) {
@@ -130,11 +131,12 @@ class ApiAgentRuntime extends EventEmitter {
     this.approvals = new Map();
   }
 
-  async createThread({ cwd, title, model, provider = "deepseek", allowMutations = false }) {
+  async createThread({ cwd, title, model, provider = "deepseek", allowMutations = false, interactionMode = "manual" }) {
+    require("./execution-mode.cjs").interactionMode(interactionMode);
     const profile = this.providerRegistry.apiProfile(provider);
     if (!profile) throw new Error(`${provider} is not configured. Save and test its API connection in Settings → Provider adapters.`);
     const id = `api-${randomUUID()}`;
-    this.threads.set(id, { id, cwd, name: title || "API session", provider, model: model || profile.model, profile, allowMutations: Boolean(allowMutations), turns: [], messages: [] });
+    this.threads.set(id, { id, cwd, name: title || "API session", provider, model: model || profile.model, profile, interactionMode, allowMutations: Boolean(allowMutations), turns: [], messages: [] });
     return { thread: { id, name: title || "API session", cwd }, model: model || profile.model };
   }
 
@@ -183,7 +185,7 @@ class ApiAgentRuntime extends EventEmitter {
     try {
       if (destructive) {
         if (!thread.allowMutations) throw new Error("This phase is read-only");
-        this.#validateMutation(thread.cwd, name, args);
+        this.#validateMutation(thread.cwd, name, args, thread);
         const abortApproval = () => { for (const requestId of [...turn.approvalIds]) this.resolveApproval({ requestId, decision: "interrupt" }).catch(() => {}); };
         signal?.addEventListener("abort", abortApproval, { once: true });
         let decision;
@@ -193,7 +195,7 @@ class ApiAgentRuntime extends EventEmitter {
         if (decision !== "accept") throw new Error("Action declined; no mutation was executed");
       }
       signal?.throwIfAborted();
-      result = { text: String(await this.#tool(thread.cwd, name, args, signal)), ok: true };
+      result = { text: String(await this.#tool(thread.cwd, name, args, signal, thread)), ok: true };
       if (/\bexit [1-9]\d*|timed out/.test(result.text) && ["workspace_git", "workspace_bash"].includes(name)) result.ok = false;
     } catch (error) {
       result = { text: `Tool error: ${error.message}`, ok: false };
@@ -211,7 +213,7 @@ class ApiAgentRuntime extends EventEmitter {
     thread.messages.push({ role: "user", content: prompt });
     const contract = outputSchema ? `\n\nReturn the final answer as one valid JSON object that conforms to this schema:\n${JSON.stringify(outputSchema)}` : "";
     const mutationPolicy = thread.allowMutations
-      ? "workspace_write and workspace_bash are controlled tools: each call pauses for explicit human approval, and you must never imply that a proposed action already happened."
+      ? thread.interactionMode === "autonomous" ? "The user preauthorized task-scoped writes and general Bash execution. Proceed without routine approval questions; never claim unobserved actions." : "workspace_write and workspace_bash are controlled tools: each call pauses for explicit human approval, and you must never imply that a proposed action already happened."
       : "This is a planning-only session: workspace_write and workspace_bash are unavailable. Propose worker tasks instead of changing files or running commands.";
     const system = `${USER_LANGUAGE_CONTRACT}\n\nYou are an Agent Deck API worker. You may inspect the assigned local workspace with the provided tools. ${mutationPolicy} Never claim a file edit, command execution, test, or artifact that you did not observe. When tools are insufficient, clearly state the blocker.` + contract;
     try {
@@ -245,12 +247,12 @@ class ApiAgentRuntime extends EventEmitter {
             if (argumentError) result = argumentError;
             else if (destructive && !thread.allowMutations) result = "Tool error: This planning-only API session cannot execute writes or Bash. Create a worker task for an approval-gated execution session.";
             else if (destructive) {
-              this.#validateMutation(thread.cwd, name, args);
+              this.#validateMutation(thread.cwd, name, args, thread);
               const decision = await this.#requestApproval({ threadId, turn, item, args });
               if (decision !== "accept") result = decision === "interrupt" ? "Tool execution was interrupted before approval." : "Tool execution was declined by the user.";
               else {
                 this.emit("event", { method: "item/execution/started", params: { threadId, turnId: turn.id, item: { ...item, state: "executing" } } });
-                result = await this.#tool(thread.cwd, name, args);
+                result = await this.#tool(thread.cwd, name, args, turn.abort.signal, thread);
               }
             } else result = await this.#tool(thread.cwd, name, args);
           }
@@ -278,7 +280,7 @@ class ApiAgentRuntime extends EventEmitter {
     const response = await this.fetch(`${thread.profile.endpoint}/chat/completions`, {
       method: "POST", signal,
       headers: { "content-type": "application/json", authorization: `Bearer ${thread.profile.apiKey}` },
-      body: JSON.stringify({ model: thread.model, messages: [{ role: "system", content: system }, ...thread.messages], tools, tool_choice: "auto", stream: false }),
+      body: JSON.stringify({ model: thread.model, messages: [{ role: "system", content: system }, ...thread.messages], tools: thread.interactionMode === "autonomous" ? tools.map(preauthorizedTool) : tools, tool_choice: "auto", stream: false }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body?.error?.message || `API responded with HTTP ${response.status}`);
@@ -296,6 +298,11 @@ class ApiAgentRuntime extends EventEmitter {
 
   #requestApproval({ threadId, turn, item, args, reason: customReason }) {
     const requestId = `api-approval-${randomUUID()}`;
+    const thread = this.threads.get(threadId);
+    if (thread?.allowMutations && thread.interactionMode === "autonomous") {
+      this.emit("event", { method: "item/approval/resolved", params: { threadId, turnId: turn.id, requestId, decision: "accept", state: "approved", reviewer: "autonomous_policy", item: { ...item, state: "approved" } } });
+      return Promise.resolve("accept");
+    }
     const kind = item.type === "webRead" ? "item/tool/requestApproval" : item.type === "commandExecution" ? "item/commandExecution/requestApproval" : item.type === "gitOperation" ? "item/gitOperation/requestApproval" : "item/fileChange/requestApproval";
     const reason = customReason || (item.type === "commandExecution" ? `API Worker wants to run: ${args.command}` : item.type === "gitOperation" ? `API Worker wants to ${args.operation}${args.message ? `: ${args.message}` : ""}` : `API Worker wants to write: ${args.path}`);
     return new Promise((resolve) => {
@@ -306,15 +313,23 @@ class ApiAgentRuntime extends EventEmitter {
     });
   }
 
-  #validateMutation(cwd, name, args) {
+  #validateMutation(cwd, name, args, thread) {
     if (!cwd) throw new Error("No workspace is assigned to this API worker");
     if (name === "workspace_write") { safeFile(cwd, assertRelativePath(args.path)); return; }
-    if (name === "workspace_bash") { assertSelectedWorkspaceCommand(args.command); return; }
+    if (name === "workspace_bash") { this.#command(args.command, thread); return; }
     if (name === "workspace_git") { gitCommand(args); return; }
     throw new Error(`Unsupported mutation tool: ${name}`);
   }
 
-  async #tool(cwd, name, args, signal) {
+  #command(command, thread) {
+    if (thread?.allowMutations && thread.interactionMode === "autonomous") {
+      if (typeof command !== "string" || !command.trim() || command.length > 8000 || command.includes("\0")) throw new Error("Command must contain 1–8000 valid characters");
+      return command;
+    }
+    return assertSelectedWorkspaceCommand(command);
+  }
+
+  async #tool(cwd, name, args, signal, thread) {
     if (!cwd) throw new Error("No workspace is assigned to this API worker");
     if (name === "workspace_list") {
       const root = safeDirectory(cwd, args.path || "."); const depth = Math.max(1, Math.min(3, Number(args.depth || 1))); const entries = [];
@@ -352,7 +367,7 @@ class ApiAgentRuntime extends EventEmitter {
       return `Wrote ${path.relative(fs.realpathSync(cwd), file)} (${Buffer.byteLength(content, "utf8")} bytes).`;
     }
     if (name === "workspace_bash") {
-      const command = assertSelectedWorkspaceCommand(args.command);
+      const command = this.#command(args.command, thread);
       const result = await this.commandRunner({ command, cwd: fs.realpathSync(cwd), signal, timeoutMs: Math.min(120000, Math.max(1000, Number(args.timeoutMs || 120000))) });
       return compact(`exit ${result.exitCode}${result.timedOut ? " · timed out" : ""}\n${result.stdout || ""}${result.stderr ? `\nSTDERR\n${result.stderr}` : ""}`, 24000);
     }

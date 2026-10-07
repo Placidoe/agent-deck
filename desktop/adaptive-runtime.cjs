@@ -67,7 +67,7 @@ function buildDirectPlan(input = {}, route = classifyMissionRequest({ ...input, 
     outcome: String(input.outcome || input.sourcePrompt || t("Deliver the requested verified change.", "交付经过验证的需求变更。")).trim(),
     scope: [t("Execute the requested change in one coherent worktree", "在一个独立工作区完成需求变更"), t("Verify observable behavior and boundary cases", "验证可观察行为与边界情况")],
     nonGoals: [t("No speculative decomposition or unrelated refactor", "不做无依据的任务拆分或无关重构")],
-    constraints: [t("One worker owns implementation and focused verification", "同一个 Agent 负责实现与相关验证"), t("Human review remains required before integration", "集成前仍须由用户验收")],
+    constraints: [t("One worker owns implementation and focused verification", "同一个 Agent 负责实现与相关验证"), input.interactionMode === "autonomous" ? t("Independent Main Agent self-check is required before integration", "集成前须通过主 Agent 独立自检") : t("Human review remains required before integration", "集成前仍须由用户验收")],
     acceptanceCriteria: acceptanceFromRequest(input),
     runtime: { strategy: "adaptive", mode: "direct", tier: route.tier, score: route.score, reasons: route.reasons, plannerSkipped: true, autoIntegrateAfterReview: true, maxWorkers: 1, maxTasks: 1, tokenBudget: totalBudget, plannedTaskTokens: directBudget },
     tasks: [{

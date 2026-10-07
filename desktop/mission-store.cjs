@@ -272,6 +272,7 @@ class MissionStore {
     this.#ensureColumn("missions", "execution_mode", "TEXT NOT NULL DEFAULT 'code'");
     this.#ensureColumn("missions", "execution_cwd", "TEXT");
     this.#ensureColumn("missions", "runtime_mode", "TEXT NOT NULL DEFAULT 'external'");
+    this.#ensureColumn("missions", "interaction_mode", "TEXT NOT NULL DEFAULT 'manual'");
     this.#ensureColumn("missions", "project_id", "TEXT");
     this.#ensureColumn("mission_events", "dedupe_key", "TEXT");
     this.#ensureColumn("artifacts", "dedupe_key", "TEXT");
@@ -290,6 +291,7 @@ class MissionStore {
   }
 
   createMission(input) {
+    const interactionMode = require("./execution-mode.cjs").interactionMode(input.interactionMode);
     if (input.executionMode && !["auto", "code", "research"].includes(input.executionMode)) throw new Error("Invalid execution mode");
     if (input.runtimeMode && !["external", "agent_deck"].includes(input.runtimeMode)) throw new Error("Invalid runtime mode");
     const now = new Date().toISOString();
@@ -297,17 +299,17 @@ class MissionStore {
       id: randomUUID(), title: input.title, outcome: input.outcome,
       sourcePrompt: input.sourcePrompt || input.outcome, cwd: input.cwd,
       provider: input.provider || "codex", model: input.model || null,
-      runtimeMode: input.runtimeMode || "external",
+      runtimeMode: input.runtimeMode || "external", interactionMode,
       projectId: this.personal.assertProject(input.projectId, { active: true }),
       tokenBudget: normalizeTokenBudget(input.tokenBudget),
       status: "planning", maxWorkers: Math.max(1, Math.min(8, input.maxWorkers || 4)),
       createdAt: now, updatedAt: now,
     };
     this.#exec(`INSERT INTO missions
-      (id,title,outcome,source_prompt,cwd,provider,runtime_mode,model,status,max_workers,token_budget,created_at,updated_at,project_id)
-      VALUES (${quote(mission.id)},${quote(mission.title)},${quote(mission.outcome)},${quote(mission.sourcePrompt)},${quote(mission.cwd)},${quote(mission.provider)},${quote(mission.runtimeMode)},${quote(mission.model)},${quote(mission.status)},${mission.maxWorkers},${quote(mission.tokenBudget)},${quote(now)},${quote(now)},${quote(mission.projectId)});`);
+      (id,title,outcome,source_prompt,cwd,provider,runtime_mode,interaction_mode,model,status,max_workers,token_budget,created_at,updated_at,project_id)
+      VALUES (${quote(mission.id)},${quote(mission.title)},${quote(mission.outcome)},${quote(mission.sourcePrompt)},${quote(mission.cwd)},${quote(mission.provider)},${quote(mission.runtimeMode)},${quote(interactionMode)},${quote(mission.model)},${quote(mission.status)},${mission.maxWorkers},${quote(mission.tokenBudget)},${quote(now)},${quote(now)},${quote(mission.projectId)});`);
     this.updateMission(mission.id, { executionMode: input.executionMode || "code" });
-    this.appendEvent(mission.id, "mission.created", { title: mission.title, provider: mission.provider, runtimeMode: mission.runtimeMode, executionMode: input.executionMode || "code", tokenBudget: mission.tokenBudget });
+    this.appendEvent(mission.id, "mission.created", { title: mission.title, provider: mission.provider, runtimeMode: mission.runtimeMode, interactionMode, executionMode: input.executionMode || "code", tokenBudget: mission.tokenBudget });
     return this.getMission(mission.id);
   }
 
@@ -606,8 +608,13 @@ class MissionStore {
     return this.getArtifact(row.id);
   }
 
-  verifyTaskArtifacts(missionId, taskId) {
-    this.#exec(`UPDATE artifacts SET verification_status='user_verified' WHERE mission_id=${quote(missionId)} AND task_id=${quote(taskId)};`);
+  verifyTaskArtifacts(missionId, taskId, status = "user_verified") {
+    if (!["user_verified", "agent_verified"].includes(status)) throw new Error("Invalid verification actor");
+    this.#exec(`UPDATE artifacts SET verification_status=${quote(status)} WHERE mission_id=${quote(missionId)} AND task_id=${quote(taskId)};`);
+  }
+
+  countTaskEvents(missionId, taskId, type) {
+    return this.#all(`SELECT COUNT(*) AS count FROM mission_events WHERE mission_id=${quote(missionId)} AND ${taskId ? `task_id=${quote(taskId)}` : "task_id IS NULL"} AND event_type=${quote(type)};`)[0].count;
   }
 
   getTask(id) {
@@ -762,12 +769,12 @@ class MissionStore {
     const includeDeferred = Boolean(options.includeDeferred);
     const missionRows = this.#all(`SELECT id,title,outcome,cwd,status,error,token_budget,updated_at
       FROM missions
-      WHERE status IN ('ready','ready_to_integrate','integration_conflict','failed')
+      WHERE ((status IN ('ready','ready_to_integrate','integration_conflict','failed') AND (interaction_mode='manual' OR status IN ('integration_conflict','failed'))) OR (status='blocked' AND interaction_mode='autonomous' AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.mission_id=missions.id AND t.status IN ('blocked','waiting_approval'))))
       ORDER BY updated_at DESC;`);
     const taskRows = this.#all(`SELECT t.id,t.mission_id,t.task_key,t.title,t.agent_role,t.status,t.phase,
       t.dependencies_json,t.result_json,t.estimated_token_budget,t.error,t.updated_at,m.title AS mission_title,m.cwd AS mission_cwd
       FROM tasks t JOIN missions m ON m.id=t.mission_id
-      WHERE t.status IN ('review','blocked','waiting_approval')
+      WHERE t.status IN ('review','blocked','waiting_approval') AND (m.interaction_mode='manual' OR t.status!='review')
       ORDER BY t.updated_at DESC;`);
     const dependencyRows = this.#all(`SELECT mission_id,task_key,dependencies_json
       FROM tasks WHERE mission_id IN (SELECT id FROM missions WHERE status NOT IN ('completed','cancelled'));`);
@@ -798,12 +805,13 @@ class MissionStore {
       ready_to_integrate: ["integration_ready", "Review integration", "Every task is verified. Review the mission result before creating the integration branch.", "Review integration"],
       integration_conflict: ["integration_conflict", "Resolve integration conflict", "The verified task branches could not be integrated automatically.", "Inspect conflict"],
       failed: ["mission_failed", "Mission needs recovery", "The mission runtime failed and needs your decision before it can continue.", "Inspect failure"],
+      blocked: ["mission_failed", "Autonomous execution needs recovery", "Automatic recovery stopped at a real blocker; inspect the preserved evidence.", "Inspect blocker"],
     };
     const missionItems = missionRows.map((row) => {
       const [type, title, fallback, primaryLabel] = missionType[row.status];
       const basePriority = { ready: 58, ready_to_integrate: 68, integration_conflict: 95, failed: 88 }[row.status] || 50;
       return {
-        id: `${row.id}:${type}:mission`, type, severity: ["integration_conflict", "failed"].includes(row.status) ? "critical" : "medium",
+        id: `${row.id}:${type}:mission`, type, severity: ["integration_conflict", "failed", "blocked"].includes(row.status) ? "critical" : "medium",
         missionId: row.id, missionTitle: row.title, missionStatus: row.status, taskId: null, taskKey: null,
         taskTitle: null, agentRole: "Main Agent", status: row.status, phase: row.status,
         title, reason: row.error || fallback, suggestedAction: primaryLabel, primaryLabel,
@@ -993,7 +1001,7 @@ class MissionStore {
     for (const task of mission.tasks) {
       const ref = `task:${task.id}`;
       taskRef.set(task.key, ref);
-      addNode({ kind: "task", taskId: task.id, title: `${task.key} · ${task.title}`, summary: compactText(task.description, 900), ref, sourceType: "task", sourceId: task.id, confidence: task.status === "completed" ? "user_verified" : "reported", content: compactText({ role: task.agentRole, status: task.status, phase: task.phase, acceptance: task.acceptanceCriteria, result: task.result, evidence: task.evidence, error: task.error }, 3000), createdAt: task.createdAt, updatedAt: task.updatedAt });
+      addNode({ kind: "task", taskId: task.id, title: `${task.key} · ${task.title}`, summary: compactText(task.description, 900), ref, sourceType: "task", sourceId: task.id, confidence: task.status === "completed" ? task.phase === "agent_verified" ? "agent_verified" : "user_verified" : "reported", content: compactText({ role: task.agentRole, status: task.status, phase: task.phase, acceptance: task.acceptanceCriteria, result: task.result, evidence: task.evidence, error: task.error }, 3000), createdAt: task.createdAt, updatedAt: task.updatedAt });
       addEdge(missionRef, ref, "assigns", 1);
     }
     for (const task of mission.tasks) {
@@ -1212,7 +1220,7 @@ class MissionStore {
     return {
       id: row.id, title: row.title, outcome: row.outcome, sourcePrompt: row.source_prompt, cwd: row.cwd,
       provider: row.provider, model: row.model, status: row.status, maxWorkers: row.max_workers,
-      runtimeMode: row.runtime_mode || "external",
+      runtimeMode: row.runtime_mode || "external", interactionMode: row.interaction_mode || "manual",
       projectId: row.project_id || null,
       mainThreadId: row.main_thread_id, activeTurnId: row.active_turn_id,
       executionMode: row.execution_mode || "code", executionCwd: row.execution_cwd || null,

@@ -13,6 +13,9 @@ app.setPath("userData", sandbox);
 const db = path.join(sandbox, "snapshot.sqlite3");
 execFileSync("/usr/bin/sqlite3", ["-readonly", path.join(profile, "agent-deck.sqlite3"), `.backup '${db}'`]);
 const store = new MissionStore(db);
+// Permission UX fixture only: isolated settings, no runtime, no live writes.
+const autonomyRegistry = process.env.AGENT_DECK_AUTONOMY_QA ? new (require("../desktop/provider-registry.cjs").ProviderRegistry)({ userDataPath: sandbox }) : null;
+globalThis.autonomyConsentResponse = false;
 let workspaceQaCandidate;
 // Explicitly labelled layout scenario in the disposable snapshot only.
 if (process.env.AGENT_DECK_WORKSPACE_QA) {
@@ -42,6 +45,10 @@ const cancelledPolishes = new Set();
 if (workspaceQaCandidate) workspace.path = workspaceQaCandidate.cwd;
 workspace.name = path.basename(workspace.path);
 const reads = {
+  ...(autonomyRegistry ? {
+    "runtime:get": () => autonomyRegistry.runtimeSettings(),
+    "runtime:set": input => require("../desktop/runtime-consent.cjs").saveRuntimeWithConsent(autonomyRegistry, input, async () => Boolean(globalThis.autonomyConsentResponse)),
+  } : {}),
   ...(approveQa ? { "missions:approve": id => approveQa.approve(id) } : {}),
   "workspace:current": () => workspace,
   "codex:status": () => ({ available: false, authenticated: false, error: "只读布局验收 · 未连接执行器", models: [] }),

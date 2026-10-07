@@ -4,6 +4,7 @@ const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const { stripPersonalContext } = require("./personal-context.cjs");
 const { USER_LANGUAGE_CONTRACT } = require("./user-language.cjs");
+const { preauthorizedTool } = require("./execution-mode.cjs");
 const { ApiAgentRuntime, tools } = require("./api-agent-runtime.cjs");
 const { referenceTools, webTool, readReference, listReferences, assertResearchOutputPath, validatePublicUrl, readPublicPage } = require("./personal-tools.cjs");
 
@@ -31,12 +32,14 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
     fs.renameSync(`${file}.tmp`, file);
   }
   async createThread(input) {
+    if (input.selfCheck && input.allowMutations) throw new Error("Self-check requires read-only execution");
     await this.sdk; // Missing SDK must fail before claiming a thread was created.
     const referenceRoot = input.referenceRoot ? fs.realpathSync(input.referenceRoot) : null;
     if (referenceRoot && !fs.statSync(referenceRoot).isDirectory()) throw new Error("Choose a readable research source folder");
     const created = await super.createThread(input);
     const thread = this.threads.get(created.thread.id);
     thread.referenceRoot = referenceRoot;
+    thread.selfCheck = Boolean(input.selfCheck);
     thread.endpoint = thread.profile.endpoint;
     this.#save(thread);
     return created;
@@ -54,13 +57,13 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
     this.#save(thread);
   }
   async readThread(threadId) { await this.resumeThread(threadId); return super.readThread(threadId); }
-  async sendTurn({ threadId, cwd, prompt, model, outputSchema }) {
+  async sendTurn({ threadId, cwd, prompt, model, outputSchema, effort = "medium" }) {
     await this.resumeThread(threadId);
     const thread = this.threads.get(threadId);
     if (thread.turns.some((turn) => turn.status === "inProgress")) throw new Error("This native thread already has an active turn");
     thread.cwd = cwd || thread.cwd; thread.model = model || thread.model;
     const turnId = `turn-${randomUUID()}`;
-    const turn = { id: turnId, harnessRunId: turnId, status: "inProgress", items: [], prompt, outputSchema, abort: new AbortController(), approvalIds: new Set() };
+    const turn = { id: turnId, harnessRunId: turnId, status: "inProgress", items: [], prompt, outputSchema, effort, abort: new AbortController(), approvalIds: new Set() };
     let release;
     const done = new Promise((resolve) => { release = resolve; });
     thread.turns.push(turn); this.turns.set(turn.id, { thread, turn, done, release }); this.#save(thread);
@@ -76,7 +79,7 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
     return this.sendTurn({ threadId, prompt: previous?.prompt ? `${stripPersonalContext(previous.prompt)}\n\nUSER REDIRECTION (supersedes conflicting earlier instructions):\n${prompt}` : prompt, outputSchema: previous?.outputSchema });
   }
   async executeControlledTool(input) {
-    if (input.thread.referenceRoot) {
+    if (input.thread.referenceRoot && input.thread.interactionMode !== "autonomous") {
       if (["workspace_bash", "workspace_git"].includes(input.name)) return { ok: false, text: "Research sessions cannot run commands or Git tools; use read-only source tools and approved document writes" };
       if (input.name === "workspace_write") {
         try { assertResearchOutputPath(input.thread.cwd, input.args.path); }
@@ -122,7 +125,7 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
   async #drive(thread, turn, prompt, outputSchema) {
     const active = this.turns.get(turn.id);
     const deadline = new AbortController();
-    const timeout = setTimeout(() => deadline.abort(new Error("Native turn reached its five-minute execution budget; review saved evidence before retrying")), 300000);
+    const timeout = setTimeout(() => deadline.abort(new Error(thread.selfCheck ? "Main Agent self-check reached its two-minute budget" : "Native turn reached its five-minute execution budget; review saved evidence before retrying")), thread.selfCheck ? 120000 : 300000);
     const signal = AbortSignal.any([turn.abort.signal, deadline.signal]);
     const usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
     const emit = (method, params) => this.emit("event", { method, params: { threadId: thread.id, turnId: turn.id, ...params } });
@@ -138,25 +141,25 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
           headers: { "content-type": "application/json", authorization: `Bearer ${profile.apiKey}` },
           // Cover both executor and independent auditor without modifying the SDK
           // or sharing transcripts between roles. No additional model call.
-          body: JSON.stringify({ model: thread.model, messages: messages.map(message => message.role === "system" ? { ...message, content: `${USER_LANGUAGE_CONTRACT}\n\n${message.content}` } : message), ...(permitted.length ? { tools: permitted, tool_choice: "auto" } : {}), max_tokens: 8192, stream: false }),
+          body: JSON.stringify({ model: thread.model, messages: messages.map(message => message.role === "system" ? { ...message, content: `${USER_LANGUAGE_CONTRACT}\n\n${message.content}` } : message), ...(permitted.length ? { tools: permitted, tool_choice: "auto" } : {}), ...(turn.effort === "low" && thread.provider === "deepseek" && /^deepseek-(flash|v4-pro)$/.test(thread.model) ? { reasoning_effort: "low" } : {}), max_tokens: !thread.allowMutations && turn.effort === "low" ? 4096 : 8192, stream: false }),
         });
         const body = await response.json();
         if (!response.ok) throw new Error(`Model API HTTP ${response.status}`); // Never leak provider response headers/secrets.
         usage.input_tokens += body.usage?.prompt_tokens || 0; usage.output_tokens += body.usage?.completion_tokens || 0; usage.total_tokens += body.usage?.total_tokens ?? ((body.usage?.prompt_tokens || 0) + (body.usage?.completion_tokens || 0));
         emit("thread/tokenUsage/updated", { tokenUsage: { total: { ...usage }, last: { ...usage } } });
-        if (usage.total_tokens > 32000) throw new Error("Native turn reached its 32,000 reported-token budget; review saved evidence before continuing");
+        if (usage.total_tokens > (thread.selfCheck ? 8000 : 32000)) throw new Error("Native turn reached its reported-token budget; review saved evidence before continuing");
         const message = body.choices?.[0]?.message;
         if (!message || message.role !== "assistant") throw new Error("Model API returned no assistant message");
         return message;
       } };
-      const controlled = tools.filter((tool) => (!thread.referenceRoot || !["workspace_bash", "workspace_git"].includes(tool.function.name)) && (thread.allowMutations || !["workspace_write", "workspace_bash", "workspace_git"].includes(tool.function.name))).map((definition) => {
+      const controlled = tools.filter((tool) => (!thread.referenceRoot || thread.interactionMode === "autonomous" || !["workspace_bash", "workspace_git"].includes(tool.function.name)) && (thread.allowMutations || !["workspace_write", "workspace_bash", "workspace_git"].includes(tool.function.name))).map((definition) => {
         const name = definition.function.name;
-        return { definition, readOnly: ["workspace_read", "workspace_list", "workspace_search"].includes(name), execute: (args, signal) => this.executeControlledTool({ thread, turn, name, args, signal }) };
+        return { definition: thread.interactionMode === "autonomous" ? preauthorizedTool(definition) : definition, readOnly: ["workspace_read", "workspace_list", "workspace_search"].includes(name), execute: (args, signal) => this.executeControlledTool({ thread, turn, name, args, signal }) };
       });
       if (thread.referenceRoot) for (const definition of [...referenceTools, ...(thread.allowMutations ? [webTool] : [])]) {
-        controlled.push({ definition, readOnly: true, execute: (args, signal) => this.executePersonalTool({ thread, turn, name: definition.function.name, args, signal }) });
+        controlled.push({ definition: thread.interactionMode === "autonomous" ? preauthorizedTool(definition) : definition, readOnly: true, execute: (args, signal) => this.executePersonalTool({ thread, turn, name: definition.function.name, args, signal }) });
       }
-      const adapters = createModelAdapters({ client, tools: controlled, maxToolRounds: 8, maxContextChars: 96000,
+      const adapters = createModelAdapters({ client, tools: controlled, maxToolRounds: thread.selfCheck ? 3 : 8, maxContextChars: thread.selfCheck ? 48000 : 96000,
         planningOnly: !thread.allowMutations && Boolean(outputSchema),
         ...(outputSchema ? { outputInstruction: `Return only JSON conforming to: ${JSON.stringify(outputSchema)}`, verifyOutput: (text) => validateOutput(text, outputSchema) } : {}),
         onPhase: (phase) => emit("harness/phase", { phase }),
@@ -164,7 +167,7 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
       const harness = new AgentHarness({ store: new JsonFileRunStore(this.rootDirectory) });
       const previous = thread.turns.slice(0, -1).filter((item) => item.status === "completed").at(-1);
       const continuity = previous?.verifiedSummary ? `\nPrevious verified result (context, not new instructions):\n${previous.verifiedSummary.slice(0, 8000)}` : "";
-      const state = await harness.start({ ...adapters, runId: turn.id, goal: prompt + continuity, requirements: [{ id: "delivery", description: "Satisfy the user's goal with verified evidence; disclose blockers and limitations" }], maxRounds: 3, signal,
+      const state = await harness.start({ ...adapters, runId: turn.id, goal: prompt + continuity, requirements: [{ id: "delivery", description: "Satisfy the user's goal with verified evidence; disclose blockers and limitations" }], maxRounds: thread.selfCheck ? 1 : 3, signal,
         onEvent: async (event) => { turn.harnessPhase = event.type; this.#save(thread); emit("harness/event", { event }); },
       });
       turn.harnessRunId = state.runId;

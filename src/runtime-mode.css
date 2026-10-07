@@ -15,3 +15,7 @@
 .runtime-mode-backend p { grid-column:1/-1; margin:4px 0; }
 .runtime-mode-error { color:#f0a89e; }
 @media(max-width:760px) { .runtime-mode-options { grid-template-columns:minmax(0,1fr); } .runtime-mode-settings { padding:20px; } }
+.runtime-supervision { border-top: 1px solid var(--border, #30343a); margin-top: 24px; padding-top: 20px; }
+.runtime-supervision h3 { font-size: 14px; margin: 0 0 8px; }
+.runtime-supervision > p { color: var(--text-muted, #a1a8b0); font-size: 12px; line-height: 1.65; }
+.runtime-autonomy-warning { padding: 12px 14px; border-radius: 8px; background: rgba(214,165,69,.08); }

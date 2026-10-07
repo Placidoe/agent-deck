@@ -31,6 +31,15 @@ export function RuntimeModeSettings({ desktop, providers = [], onChanged }) {
       {providers.filter((provider) => native ? provider.kind === "api" : ["codex", "claude_code", "trae"].includes(provider.id)).map((provider) => <option key={provider.id} value={provider.id} disabled={provider.stage !== "mission_ready"}>{provider.label}{provider.stage !== "mission_ready" ? " · 适配中，尚不可执行" : ""}</option>)}
     </SelectControl><p role="status">{busy ? "正在保存…" : selected?.missionEnabled ? "已就绪，新工作会使用这个引擎。" : native ? "请在下方配置并测试 API 连接，再从「工作」创建任务。不会回退到 Codex。" : "请连接所选 Coding Agent；未经验证的适配器不会启动任务。"}</p></div>}
     {!desktop?.runtime && <p>执行模式设置需要桌面 App，浏览器预览不会启动 Agent。</p>}
+    <div className="runtime-supervision">
+      <h3>如何推进新工作</h3><p>只影响之后启动的工作；记下事项不会自动启动，已有任务不会改变权限。</p>
+      <div className="runtime-mode-options" role="group" aria-label="执行确认方式">
+        {[["manual", "人工确认", "你来确认关键步骤", "计划、工具权限和结果验收由你决定。默认推荐。"], ["autonomous", "自主执行", "完整工具权限 · 主 Agent 自检", "自动审批、修正和汇总。主 Agent 使用 low 思考强度独立核验；随时可以停止。"]].map(([mode, title, label, detail]) =>
+          <button type="button" key={mode} disabled={!settings || busy} aria-pressed={(settings?.interactionMode || "manual") === mode} onClick={() => change({ interactionMode: mode })}><span>{label}</span><strong>{title}</strong><p>{detail}</p></button>
+        )}
+      </div>
+      {settings?.interactionMode === "autonomous" && <p className="runtime-autonomy-warning" role="status">已开启完整工具权限，不是安全沙箱。仅用于可信任务；登录、验证码或无法修复的错误仍会报告阻塞。自检是模型核验，不等于保证正确。兼容 API 未声明 low 能力时使用紧凑检查，不假设模型支持该参数。</p>}
+    </div>
     {error && <p className="runtime-mode-error" role="alert">{error}</p>}
   </section>;
 }

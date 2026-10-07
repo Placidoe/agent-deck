@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Deck · 自主执行</title>
+<style>
+:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;background:#111417;color:#e6eaef}*{box-sizing:border-box}body{margin:0}main{max-width:1040px;margin:auto;padding:64px 28px}header{max-width:760px}small,.muted{color:#9aa6b2}h1{font-size:40px;letter-spacing:-.04em;margin:12px 0 18px}h2{font-size:22px;margin:42px 0 16px}p,li{line-height:1.8;font-size:16px}a{color:#95baff}strong{font-weight:600}.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:28px 0}.step{padding:20px 16px;background:#1c2229;border:1px solid #343d48;border-radius:14px}.step small{display:block}.step b{display:block;margin:10px 0;font-size:17px}.step p{font-size:14px;margin:0}.warn{padding:18px 22px;background:#24211b;border-left:3px solid #c7a76c;border-radius:8px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.grid article{border-top:1px solid #343d48;padding-top:16px}code{font-size:14px;background:#202832;padding:2px 5px;border-radius:4px}table{border-collapse:collapse;width:100%;font-size:15px}th,td{text-align:left;padding:14px 12px;border-bottom:1px solid #343d48;vertical-align:top;line-height:1.7}footer{border-top:1px solid #343d48;margin-top:48px;padding-top:24px;font-size:14px;color:#9aa6b2}@media(max-width:700px){main{padding:32px 20px}h1{font-size:30px}.flow{grid-template-columns:1fr}.grid{grid-template-columns:1fr}table{font-size:13px}th,td{padding:10px 6px}}
+</style>
+<main>
+<header><small>AGENT DECK · 执行方式</small><h1>你给目标，主 Agent 检查并推进。</h1><p>可选的自主执行模式，把常规审批、结果验收和成果集成交给主 Agent。它检查真实文件与执行证据，而不是直接相信 Worker 的“已完成”。</p></header>
+<section aria-labelledby="enable"><h2 id="enable">怎么开启</h2><p>打开 <strong>设置 → 如何推进新工作 → 自主执行</strong>，确认一次完整工具权限提示。然后在「工作」里启动事项。仅保存笔记不会触发执行；已有工作保持原模式。</p><p class="warn">完整工具权限不是安全沙箱。执行 Agent 可以运行任意 Bash、写文件、联网或安装依赖，可能影响工作区外的数据。只对可信任务开启；OS 授权、组织限制、账号登录与验证码不会被绕过。自检也不是正确性保证。</p></section>
+<section aria-labelledby="flow"><h2 id="flow">从启动到交付</h2><div class="flow" role="list" aria-label="自主执行流程">
+<article class="step" role="listitem"><small>01 · 启动</small><b>准备计划</b><p>只读检查环境，提出工作区策略；按自主策略批准。</p></article>
+<article class="step" role="listitem"><small>02 · 执行</small><b>依赖安全的 DAG</b><p>独立任务并行；有依赖的任务等前置通过自检。</p></article>
+<article class="step" role="listitem"><small>03 · 核验</small><b>主 Agent 自检</b><p>独立只读上下文，low 思考；核对每条完成标准和实际证据。</p></article>
+<article class="step" role="listitem"><small>04 · 修正</small><b>有限重试</b><p>不通过就给原 Worker 明确反馈，最多自动修正两次。</p></article>
+<article class="step" role="listitem"><small>05 · 汇总</small><b>最终独立核验</b><p>自动合并；冲突交给主 Agent 修正。再只读检查集成成果。</p></article>
+</div></section>
+<section aria-labelledby="fast"><h2 id="fast">轻自检，不重复整个任务</h2><div class="grid"><article><strong>独立，但上下文精简</strong><p>只带原始目标、完成标准、简要证据和当前工作区，不复制完整多 Agent 对话。自检禁止写入、委派和公开发布。</p></article><article><strong>有明确预算</strong><p>每次自检使用 low 思考强度、两分钟时间预算，并要求最多三批聚焦检查。自有 Harness 还限制工具轮次与已报告 Token；兼容 API 未声明 low 能力时，不发送不支持的参数。</p></article></div><p class="muted">这里减少的是检查开销与人工等待；模型服务排队、复杂测试和网络速度仍可能很慢。没有承诺固定加速比或优于单会话基线。</p></section>
+<section aria-labelledby="boundary"><h2 id="boundary">两种引擎，同一个推进方式</h2><table><thead><tr><th>路径</th><th>执行权限</th><th>自检</th></tr></thead><tbody>
+<tr><td>外部 Codex</td><td>Worker 使用 <code>danger-full-access</code> 与 <code>approvalPolicy: never</code>。所连接的组织策略仍可能拒绝。</td><td>独立 read-only Thread，禁用委派、MCP、Hooks 和网页访问；low effort。</td></tr>
+<tr><td>Agent Deck Harness</td><td>工具代理按任务预授权，Bash 不再限于手工批准的命令集合；保留格式、路径和执行超时检查。</td><td>只读工具、结构化证据检查、独立线程。避免自检内部再嵌套一轮模型审计。</td></tr>
+<tr><td>Claude Code / Trae</td><td colspan="2">完整生命周期适配仍未开放。这个开关不会把未验证的适配器变成可执行引擎。</td></tr>
+</tbody></table></section>
+<section aria-labelledby="trust"><h2 id="trust">你仍然看得清，也停得下</h2><ul><li>核验记录带模型、真实工具回执、检查结果与低思考参数；成果标为 <code>agent_verified</code>，不冒充用户验收。</li><li>缺证据、检查失败、超时或额度/登录问题不会被伪装成成功。修正耗尽后进入明确的阻塞状态。</li><li>停止任务先关闭推进门；迟到结果不能继续验收。重启接回已持久化的自检，遇到不确定写操作不会自动重放。</li><li>自主推进只负责任务范围内的执行与集成，不额外授权无关购买、公开发布或读取私人资料。</li></ul></section>
+<section aria-labelledby="verify"><h2 id="verify">怎么验证这项能力</h2><p><code>npm run test:autonomous</code> 覆盖默认人工模式、权限传递、依赖推进、自检失败、有限修正、取消竞态、恢复与冲突集成。<code>npm run test:autonomous:live</code> 使用独立临时仓库做实际模型小任务，不修改生产偏好或账本。</p><p>2026-10-08，实际 Codex <code>gpt-5.5</code> 文件任务已完成：节点和最终成果各一次 low 自检，均有真实工具回执，人工授权等待为 0。这是一个小任务的可用性证明，不是质量或速度基准。自有 API 路径目前由协议与工具代理测试覆盖，不代表已做真实 DeepSeek 全流程评测。</p></section>
+<footer>参数依据：<a href="https://developers.openai.com/codex/app-server">Codex App Server</a>、<a href="https://api-docs.deepseek.com/api/create-chat-completion/">DeepSeek Chat Completion</a>。本页自包含，可离线打开。</footer>
+</main>
+</html>
