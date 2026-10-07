@@ -546,6 +546,12 @@ class MissionOrchestrator extends EventEmitter {
     const task = this.store.getTask(taskId);
     if (!task || task.missionId !== missionId || task.status !== "review") throw new Error("Task is not awaiting review");
     const automatic = options.reviewer === "main_agent";
+    if (!automatic) {
+      const mission = this.store.getMission(missionId);
+      const checks = task.result?.acceptance;
+      if (!mission || ["canceled", "completed"].includes(mission.status) || task.activeTurnId || !Array.isArray(checks) || !checks.length || checks.some(check => check?.passed !== true) || task.result?.blockers?.some(Boolean)) throw new Error("当前结果仍有待处理项或已不在待验收状态，不能验收；请查看最新结果。");
+      if (mission.messages.some(item => item.topic === `agent.review:${taskId}` && item.deliveryStatus === "sending")) throw new Error("修改反馈仍在发送中，不能同时验收。");
+    }
     if (automatic) {
       if (!isAutonomous(this.store.getMissionRecord(missionId)) || workerIssues(task) || options.fingerprint !== fingerprint(task)) throw new Error("Autonomous acceptance requires current, passing worker evidence");
       const receipt = this.store.listEvents(missionId, { limit: 500 }).items.find(event => event.type === "autonomous.check.completed" && event.taskId === taskId && event.threadId === options.checkThreadId && event.payload.passed === true && event.payload.fingerprint === options.fingerprint && event.payload.receipts > 0);
@@ -774,27 +780,33 @@ class MissionOrchestrator extends EventEmitter {
     return personalContextBlock(context);
   }
 
-  async sendMessage({ missionId, taskId, text }) {
+  async sendMessage({ missionId, taskId, text, reviewFeedback }) {
+    const reviewModel = reviewFeedback ? await import("../shared/review-feedback.mjs") : null;
     if (!taskId && this.planningRetries.has(missionId)) throw new Error("计划重试正在提交，请稍后再发送消息。");
     const mission = this.store.getMission(missionId);
     if (!mission) throw new Error("Mission not found");
-    const message = String(text || "").trim();
-    if (!message) throw new Error("Message cannot be empty");
     const initialTask = taskId ? this.store.getTask(taskId) : null;
     if (taskId && (!initialTask || initialTask.missionId !== missionId || !initialTask.agentThreadId)) throw new Error("This worker has no real provider thread yet");
     if (!taskId && !mission.mainThreadId) throw new Error("This mission has no real Main Agent thread yet");
+    const reviewEntries = reviewModel ? reviewModel.validateReviewFeedback(mission, initialTask, reviewFeedback) : null;
+    const topic = reviewEntries ? `agent.review:${taskId}` : "agent.steer";
+    if (reviewEntries && mission.messages.some(item => item.topic === topic && item.deliveryStatus === "sending")) throw new Error("这轮反馈已经入队，请等待送达结果；不要重复发送。");
+    const message = reviewEntries ? reviewModel.buildReviewFeedback(mission, initialTask, reviewEntries) : String(text || "").trim();
+    if (!message) throw new Error("Message cannot be empty");
     const targetName = initialTask?.agentRole || "Main Agent";
     const threadId = initialTask?.agentThreadId || mission.mainThreadId;
     // Persist and announce before crossing the runtime boundary. This receipt
     // can render immediately, even if the provider is slow or down.
-    const receipt = this.store.addMessage({ missionId, fromAgent: "You", toAgent: targetName, topic: "agent.steer", messageType: "command", text: message, deliveryStatus: "sending", source: "user" });
+    const receipt = this.store.addMessage({ missionId, fromAgent: "You", toAgent: targetName, topic, messageType: "command", text: message, deliveryStatus: "sending", source: "user" });
     this.store.appendEvent(missionId, "user.message.queued", { messageId: receipt.id, toAgent: targetName }, { taskId: initialTask?.id || null, threadId });
+    if (reviewEntries) this.store.appendEvent(missionId, "review.feedback.queued", { messageId: receipt.id, round: reviewFeedback.round, entries: reviewEntries, pendingItemIds: reviewModel.reviewItems(initialTask.result).filter(item => !reviewEntries.some(entry => entry.id === item.id)).map(item => item.id) }, { taskId, threadId });
     this.#emit(missionId);
     this.#queueMessageDelivery(threadId, async () => {
       try {
         const latestMission = this.store.getMission(missionId);
         const latestTask = taskId ? this.store.getTask(taskId) : null;
         if (!latestMission) throw new Error("Mission was removed before the message could be delivered");
+        if (reviewModel) reviewModel.validateReviewFeedback(latestMission, latestTask, reviewFeedback);
         const runtime = this.#runtime(latestMission);
         if (!taskId) {
           if (latestMission.activeTurnId) {
@@ -838,6 +850,11 @@ class MissionOrchestrator extends EventEmitter {
             const route = workerPerformanceRoute(latestTask, { direct: latestMission.spec?.runtime?.mode === "direct" });
             const artifactContract = route.reportTask ? HTML_FIRST_DELIVERABLE : NATIVE_ARTIFACT_CONTRACT;
             const turn = await runtime.sendTurn({ threadId, cwd: latestTask.worktreePath, prompt: `${executionPolicy(latestMission)}${this.#personalContext(latestMission, message, taskId)}${message}\n\n${FAST_EXECUTION_CONTRACT}\n\n${artifactContract}`, effort: route.effort, outputSchema: taskResultSchema });
+            if (reviewModel && ["canceled", "completed"].includes(this.store.getMissionStatus(missionId))) {
+              try { await runtime.interrupt({ threadId, turnId: turn.id }); }
+              catch (error) { throw new Error(`工作已停止，反馈未恢复执行；中断提供方失败：${error.message || error}`); }
+              throw new Error("工作已停止，已中断这条反馈的续跑；草稿仍保留。");
+            }
             this.store.updateTask(latestTask.id, { status: "running", phase: "working", activeTurnId: turn.id, error: null });
             this.store.startRun({ missionId, taskId: latestTask.id, agentId: `${missionId}:${latestTask.key}`, threadId, turnId: turn.id, phase: "working", triggerType: "user.message" });
             this.store.updateMission(missionId, { status: "running", error: null });

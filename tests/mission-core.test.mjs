@@ -828,7 +828,7 @@ test("adaptive direct mode skips the planner and auto-integrates after one human
   assert.equal(calls.find(call => call.kind === "thread").input.dynamicTools, undefined);
   const task = created.tasks[0];
   fs.writeFileSync(path.join(task.worktreePath, "parser.js"), "export const parse = value => typeof value === 'string' && /^\\d+(?:\\.\\d+)?$/.test(value) ? null : value;\n");
-  await orchestrator.handleCodexEvent({ method: "item/completed", params: { threadId: task.agentThreadId, item: { id: "direct-result", type: "agentMessage", phase: "final_answer", text: "Parser fixed. Focused boundary tests passed. Changed parser.js." } } });
+  await orchestrator.handleCodexEvent({ method: "item/completed", params: { threadId: task.agentThreadId, item: { id: "direct-result", type: "agentMessage", phase: "final_answer", text: JSON.stringify({ summary: "Parser fixed. Focused boundary tests passed. Changed parser.js.", acceptance: [{ criterion: "Boundary tests pass", passed: true, evidence: "Unit fixture: focused boundary checks passed." }], changedFiles: ["parser.js"], blockers: [] }) } } });
   await orchestrator.handleCodexEvent({ method: "turn/completed", params: { threadId: task.agentThreadId, turn: { id: task.activeTurnId, status: "completed" } } });
   assert.equal(store.getTask(task.id).status, "review");
   assert.match(store.getTask(task.id).result.summary, /Focused boundary tests passed/);

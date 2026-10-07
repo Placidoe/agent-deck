@@ -41,10 +41,39 @@ const approveQa = process.env.AGENT_DECK_APPROVE_QA ? new (require("../desktop/m
 const modelClient = process.env.AGENT_DECK_MODEL_QA ? new (require("../desktop/codex-app-server.cjs").CodexAppServer)() : null;
 if (process.env.AGENT_DECK_WORKFLOW_QA) store.library.createFolder({ name: "产品文档 · 只读测试", rootPath: fs.realpathSync(path.join(__dirname, "../docs")) });
 const workspace = JSON.parse(fs.readFileSync(path.join(profile, "workspace.json"), "utf8"));
+let reviewQa;
+if (process.env.AGENT_DECK_REVIEW_QA) {
+  workspace.path = sandbox;
+  const mission = store.createMission({ title: "逐项审阅 · 布局测试（非真实执行）", outcome: "审阅交付并逐项确认，不自动认领或发布", cwd: sandbox });
+  store.savePlan(mission.id, { title: mission.title, outcome: mission.outcome, tasks: [
+    { key: "UPSTREAM", title: "前置证据 · QA fixture", description: "这是一条明确标记的前置资料，仅测试布局。", agentRole: "前置研究员", dependencies: [], acceptanceCriteria: ["提供资料"] },
+    { key: "REVIEW", title: "开源贡献候选审阅 · QA fixture", description: "寻找资源允许、可复现的开源贡献。不要重复认领；需要用户确认目标。", agentRole: "贡献研究员", dependencies: ["UPSTREAM"], acceptanceCriteria: ["链接可追溯", "已对照重复任务", "范围清晰", "资料完整"] },
+  ] });
+  const task = store.getMission(mission.id).tasks.find(item => item.key === "REVIEW");
+  const upstream = store.getMission(mission.id).tasks.find(item => item.key === "UPSTREAM");
+  for (const entry of [upstream, task]) store.updateTask(entry.id, { status: "review", phase: "review", agentThreadId: `qa-no-provider:${entry.key}`, worktreePath: sandbox, result: { summary: "布局场景：候选资料已整理，但没有实际认领或发布。不是模型输出。", acceptance: entry.acceptanceCriteria.map(criterion => ({ criterion, passed: true, evidence: "QA fixture：测试记录，不是模型验证。" })), blockers: ["未打开新的 PR；需要后续实现任务接手新目标。", "Transformers #43979 实现前需要先评论认领具体模型，避免子任务重复。"] } });
+  fs.copyFileSync(path.join(__dirname, "../tests/fixtures/review-reference.html"), path.join(sandbox, "reference.html"));
+  for (const entry of [upstream, task]) store.addArtifact({ missionId: mission.id, taskId: entry.id, title: `${entry.key} 的参考 · QA fixture`, summary: "布局测试参考，不是模型输出。", files: ["reference.html"], verificationStatus: "unverified" });
+  store.updateMission(mission.id, { status: "review", mainThreadId: "qa-no-provider:main" });
+  const requirement = store.createRequirement({ title: mission.title, outcome: mission.outcome, workspacePath: sandbox });
+  store.updateRequirement(requirement.id, { missionId: mission.id, status: "review" });
+  reviewQa = globalThis.reviewQa = { missionId: mission.id, taskId: task.id, upstreamId: upstream.id, store, sent: [], failDelivery: true };
+  reviewQa.orchestrator = new (require("../desktop/mission-orchestrator.cjs").MissionOrchestrator)({ store, worktrees: {}, codex: { sendTurn: async input => {
+    if (!input.threadId.startsWith("qa-no-provider:")) throw new Error("QA refuses real provider threads");
+    reviewQa.sent.push(input);
+    if (reviewQa.failDelivery) throw new Error("QA fixture：模拟发送失败，未调用模型");
+    return { id: "qa-followup-no-inference" };
+  } } });
+  reviewQa.orchestrator.on("update", payload => BrowserWindow.getAllWindows().forEach(window => window.webContents.send("mission:update", payload)));
+}
 const cancelledPolishes = new Set();
 if (workspaceQaCandidate) workspace.path = workspaceQaCandidate.cwd;
 workspace.name = path.basename(workspace.path);
 const reads = {
+  ...(reviewQa ? {
+    "missions:send-message": input => { if (input.missionId !== reviewQa.missionId) throw new Error("QA refuses live mutations"); return reviewQa.orchestrator.sendMessage(input); },
+    "artifacts:preview": input => artifacts.preview(input),
+  } : {}),
   ...(autonomyRegistry ? {
     "runtime:get": () => autonomyRegistry.runtimeSettings(),
     "runtime:set": input => require("../desktop/runtime-consent.cjs").saveRuntimeWithConsent(autonomyRegistry, input, async () => Boolean(globalThis.autonomyConsentResponse)),

@@ -9,6 +9,7 @@ module.exports = {
   },
   files: [
     "desktop/**/*",
+    "shared/**/*",
     "dist/client/**/*",
     "package.json",
   ],

@@ -1,0 +1,54 @@
+.app-shell .review-workbench { margin: 12px; padding: 16px; min-width: 0; border: 1px solid #ffffff14; border-radius: 10px; background: #171c22; container-type: inline-size; }
+.app-shell .review-workbench .review-overview { display: flex; align-items: flex-start; gap: 10px; padding: 0; border: 0; background: none; }
+.app-shell .review-overview > svg { flex: none; margin-top: 3px; color: #d4b575; }
+.app-shell .review-overview > div { flex: 1; min-width: 0; }
+.app-shell .review-overview > button { flex: none; }
+.app-shell .review-workbench h3 { margin: 0; font-size: 14px; line-height: 1.5; font-weight: 600; color: #e0e5ed; }
+.app-shell .review-workbench h4 { margin: 0 0 12px; font-size: 12px; font-weight: 600; color: #d4dce7; }
+.app-shell .review-workbench h5 { margin: 0; font-size: 12px; line-height: 1.65; font-weight: 550; color: #d6dee9; overflow-wrap: anywhere; }
+.app-shell .review-workbench p { margin: 6px 0; font-size: 12px; line-height: 1.7; color: #a2adba; white-space: pre-wrap; overflow-wrap: anywhere; }
+.app-shell .review-workbench small { display: block; font-size: 11px; line-height: 1.6; color: #8895a6; overflow-wrap: anywhere; }
+.app-shell .review-workbench .review-intro { margin: 12px 0 18px; color: #8f9baa; }
+.app-shell .review-columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+.app-shell .review-workbench .review-item-list, .app-shell .review-workbench .review-reference-region { min-width: 0; margin: 0; padding: 0; border: 0; }
+.app-shell .review-item { margin: 0 0 12px; padding: 14px; border: 1px solid #ffffff12; border-radius: 8px; background: #11161b; }
+.app-shell .review-item.selected { border-color: #5377a155; }
+.app-shell .review-workbench .review-item > header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 0 0 10px; border: 0; background: transparent; }
+.app-shell .review-number { color: #94adcc; font-size: 11px; font-variant-numeric: tabular-nums; }
+.app-shell .review-kind { font-size: 10px; color: #aaa08c; }
+.app-shell .review-draft-status { margin-left: auto; font-size: 10px; color: #8295ad; }
+.app-shell .review-item label { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; font-size: 11px; color: #8f9baa; }
+.app-shell .review-workbench textarea { box-sizing: border-box; width: 100%; min-height: 90px; max-height: 400px; padding: 10px 11px; border: 1px solid #ffffff1c; border-radius: 6px; resize: vertical; background: #0d1217; color: #dbe1ea; font: 12px/1.7 var(--font-ui); outline: none; }
+.app-shell .review-workbench textarea::placeholder { color: #667181; }
+.app-shell .review-workbench textarea:focus { border-color: #628ac0; box-shadow: 0 0 0 2px #628ac01c; }
+.app-shell .review-workbench button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; height: auto; max-width: 100%; padding: 6px 10px; border: 1px solid #ffffff18; border-radius: 6px; background: #202730; color: #c7d1de; box-shadow: none; font: 500 11px/1.5 var(--font-ui); cursor: pointer; }
+.app-shell .review-workbench button:hover:not(:disabled) { background: #2b3542; }
+.app-shell .review-workbench button:focus-visible, .app-shell .review-workbench summary:focus-visible { outline: 2px solid #83a6d6; outline-offset: 3px; }
+.app-shell .review-workbench button:disabled { opacity: .5; cursor: not-allowed; }
+.app-shell .review-workbench .review-text-action { margin-top: 8px; padding: 3px 0; min-height: 26px; border: 0; background: transparent; color: #8eb1df; flex-wrap: wrap; justify-content: flex-start; text-align: left; }
+.app-shell .review-text-action > span { font-size: 10px; font-weight: 400; color: #6f7b8b; }
+.app-shell .review-workbench .review-reference-region { padding: 16px; border: 1px solid #ffffff0e; border-radius: 8px; background: #12171d; }
+.app-shell .review-reference-region > header { display: flex; flex-direction: column; gap: 4px; border: 0; padding: 0 0 12px; }
+.app-shell .review-reference-region > header h4 { margin: 0; }
+.app-shell .review-reference-region > header > span { font-size: 10px; color: #718094; }
+.app-shell .review-workbench .review-reference-region > section { margin: 0; padding: 14px 0; border: 0; border-top: 1px solid #ffffff0c; background: transparent; }
+.app-shell .review-workbench .review-location { color: #8aa6c9; font-size: 11px; }
+.app-shell .review-workbench .review-missing-evidence { color: #919ba8; font-size: 11px; }
+.app-shell .review-workbench details { margin-top: 10px; }
+.app-shell .review-workbench summary { padding: 4px 0; color: #bbc8d9; font-size: 11px; line-height: 1.6; cursor: pointer; overflow-wrap: anywhere; }
+.app-shell .review-workbench ul { padding-left: 17px; color: #9faaba; font-size: 11px; line-height: 1.7; }
+.app-shell .review-workbench .review-file-link { display: flex; width: 100%; margin-top: 6px; justify-content: flex-start; text-align: left; background: #1c2530; }
+.app-shell .review-file-link > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.app-shell .review-file-link > svg { flex: none; }
+.app-shell .review-workbench dl { display: block; margin: 10px 0; }
+.app-shell .review-workbench dt { margin-top: 8px; color: #77889d; font-size: 10px; }
+.app-shell .review-workbench dd { margin: 4px 0 0; color: #b6c2d2; overflow-wrap: anywhere; font-size: 11px; line-height: 1.6; }
+.app-shell .review-source-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.app-shell .review-workbench .review-submit { margin-top: 16px; padding-top: 14px; border-top: 1px solid #ffffff15; background: transparent; }
+.app-shell .review-submit > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.app-shell .review-workbench .review-send { background: #376bb8; color: #f1f5fc; border-color: #507dc0; }
+.app-shell .review-workbench .review-accept { background: #25382e; color: #bcdbca; border-color: #41654e; }
+.app-shell .review-original-result { margin: 12px; min-width: 0; }
+.app-shell .review-original-result > summary { padding: 10px 0; cursor: pointer; color: #9aabc0; font-size: 11px; }
+.app-shell .agent-result-view .review-original-result > header { display: block; padding: 12px 0; }
+@container (min-width: 540px) { .app-shell .review-columns { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 18px; } }
