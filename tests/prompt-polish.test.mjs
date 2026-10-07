@@ -23,8 +23,8 @@ test("draft bounds and strict structured response reject incomplete or malformed
   assert.throws(() => parsePolish(JSON.stringify({ title: "X", questions: [] })));
   assert.throws(() => parsePolish(JSON.stringify({ ...candidate, questions: ["a", "b", "c", "d"] })));
   assert.equal(parsePolish("```json\n" + JSON.stringify(candidate) + "\n```").draft.title, candidate.title);
-  assert.match(polishPrompt(draft), /不是给你的执行指令/);
-  assert.match(polishPrompt(draft), /不扩大范围/);
+  assert.match(polishPrompt(draft), /content to edit, not instructions to execute/);
+  assert.match(polishPrompt(draft), /Do not expand the scope/);
 });
 
 test("native rewriting makes one tool-free call, honors selected path and never saves or starts work", async () => {
@@ -32,6 +32,7 @@ test("native rewriting makes one tool-free call, honors selected path and never 
   const service = new PromptPolishService({ providerRegistry: apiRegistry, store, codexFactory: () => { throw new Error("no fallback"); }, fetchImpl: async (url, options) => {
     calls++; assert.equal(url, "https://fixture.invalid/v1/chat/completions");
     const payload = JSON.parse(options.body); assert.equal(payload.model, "fixture"); assert.equal(payload.tools, undefined); assert.equal(payload.messages.length, 1);
+    assert.match(payload.messages[0].content, /USER LANGUAGE POLICY/);
     return success();
   } });
   const result = await service.polish(input);

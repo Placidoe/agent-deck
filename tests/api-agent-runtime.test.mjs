@@ -56,6 +56,7 @@ test("API runtime preserves a session, executes read-only tool calls, and emits 
     fetchImpl: async (_url, options) => {
       request += 1;
       const body = JSON.parse(options.body);
+      assert.ok(body.messages.some(message => message.role === "system" && /USER LANGUAGE POLICY/.test(message.content)));
       if (request === 1) return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "call-read", type: "function", function: { name: "workspace_read", arguments: '{"path":"notes.txt"}' } }] } }] }), { status: 200 });
       assert.equal(body.messages.some((message) => message.role === "tool" && /keeps evidence local/.test(message.content)), true);
       return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: '{"summary":"Evidence read","acceptance":[],"changedFiles":[],"blockers":[]}' } }], usage: { prompt_tokens: 12, completion_tokens: 8 } }), { status: 200 });

@@ -901,11 +901,13 @@ test("users can intervene in persisted Main Agent and Worker conversations", asy
   await orchestrator.sendMessage({ missionId: mission.id, taskId: task.id, text: "Recheck the edge case" });
   await new Promise(setImmediate);
   assert.equal(sentTurns[1].threadId, "worker-thread");
+  assert.match(sentTurns[1].prompt, /USER LANGUAGE POLICY/);
   assert.equal(store.getTask(task.id).status, "running");
   assert.equal(store.getMission(mission.id).status, "running");
   await orchestrator.sendMessage({ missionId: mission.id, taskId: task.id, text: "Also inspect the fallback" });
   await new Promise(setImmediate);
   assert.equal(steeredTurns[0].threadId, "worker-thread");
+  assert.match(steeredTurns[0].prompt, /USER LANGUAGE POLICY/);
 }));
 
 test("message receipts appear before slow Codex delivery and retain a failure reason", async () => withTempDirAsync(async (directory) => {

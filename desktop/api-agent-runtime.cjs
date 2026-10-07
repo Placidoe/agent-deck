@@ -3,6 +3,7 @@ const { randomUUID } = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { runDebugCommand } = require("./terminal-service.cjs");
+const { USER_LANGUAGE_CONTRACT } = require("./user-language.cjs");
 
 const MAX_TOOL_ROUNDS = 12;
 const MAX_FILE_BYTES = 96 * 1024;
@@ -212,7 +213,7 @@ class ApiAgentRuntime extends EventEmitter {
     const mutationPolicy = thread.allowMutations
       ? "workspace_write and workspace_bash are controlled tools: each call pauses for explicit human approval, and you must never imply that a proposed action already happened."
       : "This is a planning-only session: workspace_write and workspace_bash are unavailable. Propose worker tasks instead of changing files or running commands.";
-    const system = `You are an Agent Deck API worker. You may inspect the assigned local workspace with the provided tools. ${mutationPolicy} Never claim a file edit, command execution, test, or artifact that you did not observe. When tools are insufficient, clearly state the blocker.` + contract;
+    const system = `${USER_LANGUAGE_CONTRACT}\n\nYou are an Agent Deck API worker. You may inspect the assigned local workspace with the provided tools. ${mutationPolicy} Never claim a file edit, command execution, test, or artifact that you did not observe. When tools are insufficient, clearly state the blocker.` + contract;
     try {
       for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
         const response = await this.#completion(thread, system, turn.abort.signal);

@@ -60,6 +60,7 @@ test("native SDK executes approval-gated write, fresh audit reads output, persis
   const requests = [];
   const options = { rootDirectory: path.join(directory, "state"), providerRegistry: { apiProfile: () => profile }, fetchImpl: async (_url, options) => {
     const body = JSON.parse(options.body); requests.push(body); calls++;
+    assert.ok(body.messages.some(message => message.role === "system" && /USER LANGUAGE POLICY/.test(message.content)), "executor and independent auditor must inherit language contract");
     if (calls === 1) return response(null, call("workspace_write", { path: "result.txt", content: "Verified output" }));
     if (calls === 2) return response("Created result.txt");
     assert.equal(body.tools.some((tool) => ["workspace_write", "workspace_bash", "workspace_git"].includes(tool.function.name)), false);

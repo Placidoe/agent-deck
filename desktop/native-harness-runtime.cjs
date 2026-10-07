@@ -3,6 +3,7 @@ const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { pathToFileURL } = require("node:url");
 const { stripPersonalContext } = require("./personal-context.cjs");
+const { USER_LANGUAGE_CONTRACT } = require("./user-language.cjs");
 const { ApiAgentRuntime, tools } = require("./api-agent-runtime.cjs");
 const { referenceTools, webTool, readReference, listReferences, assertResearchOutputPath, validatePublicUrl, readPublicPage } = require("./personal-tools.cjs");
 
@@ -135,7 +136,9 @@ class NativeHarnessRuntime extends ApiAgentRuntime {
         const response = await this.fetch(`${profile.endpoint}/chat/completions`, {
           method: "POST", signal: AbortSignal.any([signal, AbortSignal.timeout(90000)].filter(Boolean)),
           headers: { "content-type": "application/json", authorization: `Bearer ${profile.apiKey}` },
-          body: JSON.stringify({ model: thread.model, messages, ...(permitted.length ? { tools: permitted, tool_choice: "auto" } : {}), max_tokens: 8192, stream: false }),
+          // Cover both executor and independent auditor without modifying the SDK
+          // or sharing transcripts between roles. No additional model call.
+          body: JSON.stringify({ model: thread.model, messages: messages.map(message => message.role === "system" ? { ...message, content: `${USER_LANGUAGE_CONTRACT}\n\n${message.content}` } : message), ...(permitted.length ? { tools: permitted, tool_choice: "auto" } : {}), max_tokens: 8192, stream: false }),
         });
         const body = await response.json();
         if (!response.ok) throw new Error(`Model API HTTP ${response.status}`); // Never leak provider response headers/secrets.

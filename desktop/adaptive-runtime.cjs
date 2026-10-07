@@ -5,6 +5,8 @@ const IMPLEMENTATION_PATTERN = /(implement|build|develop|code|fix|refactor|featu
 const TEST_PATTERN = /(^|[^a-z])(test|tests|testing|verify|verification|validate|validation|qa)([^a-z]|$)|测试|验证|验收|质检/i;
 const FINALIZATION_PATTERN = /(review|audit|report|synthesi|integration|integrate|release|summary|评审|审计|报告|综合|集成|发布|总结)/i;
 
+const { exportLocale, exportText } = require("./user-language.cjs");
+
 function requestText(input = {}) {
   return [input.title, input.outcome, input.sourcePrompt].filter(Boolean).join("\n").trim();
 }
@@ -46,31 +48,33 @@ function classifyMissionRequest(input = {}) {
 }
 
 function acceptanceFromRequest(input = {}) {
+  const t = (en, zh) => exportText(exportLocale(input), en, zh);
   const text = String(input.outcome || input.sourcePrompt || "").trim();
   const candidates = text.split(/\n+/).map(line => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, "").trim()).filter(line => line.length >= 8 && line.length <= 220);
   const criteria = [...new Set(candidates)].slice(0, 4);
   if (!criteria.length && text) criteria.push(text.slice(0, 220));
-  criteria.push("Run focused existing tests plus boundary or invalid-input probes derived from the request, and report the exact evidence.");
-  criteria.push("Keep unrelated behavior and public interfaces unchanged unless the request explicitly requires otherwise.");
+  criteria.push(t("Run focused existing tests plus boundary or invalid-input probes derived from the request, and report the exact evidence.", "运行相关已有测试，并根据需求验证边界与无效输入，报告可核查的证据。"));
+  criteria.push(t("Keep unrelated behavior and public interfaces unchanged unless the request explicitly requires otherwise.", "除非需求明确要求，保持无关行为和公开接口不变。"));
   return [...new Set(criteria)].slice(0, 6);
 }
 
 function buildDirectPlan(input = {}, route = classifyMissionRequest({ ...input, orchestrationMode: "direct" })) {
+  const t = (en, zh) => exportText(exportLocale(input), en, zh);
   const totalBudget = Math.max(1000, Number(input.tokenBudget || 80000));
   const directBudget = Math.min(totalBudget, 20000);
   return {
-    title: String(input.title || "Direct delivery").trim(),
-    outcome: String(input.outcome || input.sourcePrompt || "Deliver the requested verified change.").trim(),
-    scope: ["Execute the requested change in one coherent worktree", "Verify observable behavior and boundary cases"],
-    nonGoals: ["No speculative decomposition or unrelated refactor"],
-    constraints: ["One worker owns implementation and focused verification", "Human review remains required before integration"],
+    title: String(input.title || t("Direct delivery", "直接交付")).trim(),
+    outcome: String(input.outcome || input.sourcePrompt || t("Deliver the requested verified change.", "交付经过验证的需求变更。")).trim(),
+    scope: [t("Execute the requested change in one coherent worktree", "在一个独立工作区完成需求变更"), t("Verify observable behavior and boundary cases", "验证可观察行为与边界情况")],
+    nonGoals: [t("No speculative decomposition or unrelated refactor", "不做无依据的任务拆分或无关重构")],
+    constraints: [t("One worker owns implementation and focused verification", "同一个 Agent 负责实现与相关验证"), t("Human review remains required before integration", "集成前仍须由用户验收")],
     acceptanceCriteria: acceptanceFromRequest(input),
     runtime: { strategy: "adaptive", mode: "direct", tier: route.tier, score: route.score, reasons: route.reasons, plannerSkipped: true, autoIntegrateAfterReview: true, maxWorkers: 1, maxTasks: 1, tokenBudget: totalBudget, plannedTaskTokens: directBudget },
     tasks: [{
       key: "DIRECT_EXECUTION",
-      title: String(input.title || "Implement and verify the requested change").trim(),
-      description: `${String(input.sourcePrompt || input.outcome || "").trim()}\n\nOwn the complete change in this worktree: inspect, implement, run focused tests, derive adversarial boundary checks from the request, and return concrete evidence.`,
-      agentRole: "Delivery Agent",
+      title: String(input.title || t("Implement and verify the requested change", "实现并验证需求变更")).trim(),
+      description: `${String(input.sourcePrompt || input.outcome || "").trim()}\n\n${t("Own the complete change in this worktree: inspect, implement, run focused tests, derive adversarial boundary checks from the request, and return concrete evidence.", "在此工作区负责完整变更：检查、实现、运行相关测试，根据需求验证边界情况，返回具体证据。")}`,
+      agentRole: t("Delivery Agent", "交付 Agent"),
       dependencies: [],
       acceptanceCriteria: acceptanceFromRequest(input),
       estimatedTokenBudget: directBudget,

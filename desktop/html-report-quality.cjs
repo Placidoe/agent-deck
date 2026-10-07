@@ -11,7 +11,7 @@ Route the deliverable before writing it:
 - When calling agentdeck.publish_artifact for a human-facing result, set contentType to report, research, analysis, dashboard, plan, or review, and set dataRich truthfully.
 
 Write like an editor, not a template engine:
-- Match the reader's language. For Chinese reports, use natural Chinese headings and prose; do not mix in generic English UI labels.
+- Follow the user's original request language, unless the user explicitly specifies another output language. Never infer it from source papers, system prompts or generated task names. This applies to headings, navigation, prose, table headers, chart labels, captions and accessible labels; set html lang accordingly. Use natural phrasing, not generic English UI labels. Preserve code, paths, identifiers and verbatim source quotations.
 - Lead with the decision or finding, then evidence, implication, and limitation. Use claim-led section titles instead of generic headings such as “Overview” or “Details”.
 - The executive summary must contain 3–5 complete findings with implications, not repeated slogans or a wall of metric cards.
 - Do not repeat the same sentence in the hero, summary cards, body, and conclusion. Use connective prose between visual sections so the report reads as one argument.
