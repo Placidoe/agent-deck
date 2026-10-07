@@ -10,6 +10,7 @@ const {
 } = require("./mission-performance.cjs");
 const { buildDirectPlan, classifyMissionRequest, optimizeMissionPlan } = require("./adaptive-runtime.cjs");
 const { workspaceSchema, normalizeWorkspace, workspacePrompt, isManagedWorkspace } = require("./workspace-policy.cjs");
+const { assertEditableRequirement } = require("./prompt-polish.cjs");
 
 const LEDGER_STRING_LIMIT = 32768;
 const HTML_FIRST_DELIVERABLE = HTML_REPORT_CONTRACT;
@@ -268,7 +269,10 @@ class MissionOrchestrator extends EventEmitter {
 
   createRequirement(input) { return this.store.createRequirement(input); }
 
-  updateRequirement(id, patch) { return this.store.updateRequirement(id, patch); }
+  updateRequirement(id, patch) {
+    if (["title", "outcome", "body"].some(field => patch[field] !== undefined)) assertEditableRequirement(this.store, id);
+    return this.store.updateRequirement(id, patch);
+  }
 
   async claimNextRequirement(input = {}) {
     const requirement = input.requirementId ? this.store.claimRequirement(input.requirementId) : this.store.claimNextRequirement(input.workspacePath);

@@ -38,6 +38,7 @@ const approveQa = process.env.AGENT_DECK_APPROVE_QA ? new (require("../desktop/m
 const modelClient = process.env.AGENT_DECK_MODEL_QA ? new (require("../desktop/codex-app-server.cjs").CodexAppServer)() : null;
 if (process.env.AGENT_DECK_WORKFLOW_QA) store.library.createFolder({ name: "产品文档 · 只读测试", rootPath: fs.realpathSync(path.join(__dirname, "../docs")) });
 const workspace = JSON.parse(fs.readFileSync(path.join(profile, "workspace.json"), "utf8"));
+const cancelledPolishes = new Set();
 if (workspaceQaCandidate) workspace.path = workspaceQaCandidate.cwd;
 workspace.name = path.basename(workspace.path);
 const reads = {
@@ -59,6 +60,16 @@ const reads = {
   "requirements:list": (input) => store.listRequirements(input),
   "requirements:create": input => store.createRequirement(input),
   "requirements:update": input => store.updateRequirement(input.id, input.patch),
+  ...(process.env.AGENT_DECK_POLISH_QA ? {
+    // Labelled UI fixture only. Does not connect any provider or claim model quality.
+    "requirements:polish": async input => {
+      await new Promise(resolve => setTimeout(resolve, input.draft.body.includes("慢模式") ? 600 : 40));
+      if (cancelledPolishes.has(input.requestId)) throw new Error("已取消润色，原文未改动。");
+      if (input.draft.body.includes("失败模式")) throw new Error("布局测试：模拟模型不可用，原文未改动。");
+      return { draft: { title: "润色候选 · " + input.draft.title, outcome: input.draft.outcome, body: "布局测试候选（不是模型输出）：保留原有目标、背景与限制。\n" + input.draft.body }, questions: ["这是一条布局测试问题，尚未成为验收标准。"], model: "QA fixture · 非模型输出", usage: null };
+    },
+    "requirements:cancel-polish": id => { cancelledPolishes.add(id); return true; },
+  } : {}),
   "personal:projects": () => store.personal.listProjects(),
   "library:overview": () => store.library.overview(),
   "library:files": input => store.library.files(input),

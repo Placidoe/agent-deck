@@ -12,6 +12,7 @@ const { ProviderRegistry } = require("./provider-registry.cjs");
 const { ApiAgentRuntime } = require("./api-agent-runtime.cjs");
 const { NativeHarnessRuntime } = require("./native-harness-runtime.cjs");
 const { ProviderAdapterHost } = require("./adapter-host.cjs");
+const { PromptPolishService } = require("./prompt-polish.cjs");
 const { resolveDebugCwd, runDebugCommand } = require("./terminal-service.cjs");
 
 let mainWindow;
@@ -26,6 +27,7 @@ let providerRegistry = null;
 let apiRuntime = null;
 let nativeHarness = null;
 let adapterHost = null;
+let promptPolish = null;
 let missionReconcileTimer = null;
 const isPrimaryInstance = app.requestSingleInstanceLock();
 if (!isPrimaryInstance) app.quit();
@@ -267,6 +269,11 @@ ipcMain.handle("requirements:update", (_event, input) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
   return missionOrchestrator.updateRequirement(input?.id, input?.patch || {});
 });
+ipcMain.handle("requirements:polish", (_event, input) => {
+  if (!promptPolish) throw new Error("文字润色尚未就绪。");
+  return promptPolish.polish(input);
+});
+ipcMain.handle("requirements:cancel-polish", (_event, requestId) => promptPolish?.cancel(requestId) || false);
 ipcMain.handle("requirements:claim-next", async (_event, input) => {
   if (!missionOrchestrator) throw new Error("Mission runtime is not ready");
   return missionOrchestrator.claimNextRequirement(input || {});
@@ -438,6 +445,7 @@ app.whenReady().then(() => {
     manifestLookup: (id) => adapterHost ? adapterHost.manifest(id) : require("./adapter-host.cjs").manifestFor(id),
   });
   apiRuntime = new ApiAgentRuntime({ providerRegistry });
+  promptPolish = new PromptPolishService({ providerRegistry, store: missionStore });
   nativeHarness = new NativeHarnessRuntime({ providerRegistry, rootDirectory: path.join(app.getPath("userData"), "native-harness") });
   const forwardProviderEvent = (event) => {
     missionOrchestrator?.handleCodexEvent(event).catch((error) => {
@@ -499,5 +507,6 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   if (missionReconcileTimer) clearInterval(missionReconcileTimer);
   codex.stop();
+  promptPolish?.stop();
   missionStore?.close();
 });

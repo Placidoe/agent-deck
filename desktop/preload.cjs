@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("agentDeckDesktop", {
     list: (input) => ipcRenderer.invoke("requirements:list", input),
     create: (input) => ipcRenderer.invoke("requirements:create", input),
     update: (input) => ipcRenderer.invoke("requirements:update", input),
+    polish: (input) => ipcRenderer.invoke("requirements:polish", input),
+    cancelPolish: (requestId) => ipcRenderer.invoke("requirements:cancel-polish", requestId),
     claimNext: (input) => ipcRenderer.invoke("requirements:claim-next", input),
   },
   library: {

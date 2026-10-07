@@ -1,5 +1,6 @@
 import { SelectControl } from "./SelectControl.jsx";
 import { ExecutionModeField } from "./ExecutionModeField.jsx";
+import { PromptPolish } from "./PromptPolish.jsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowsClockwise, ArrowRight, CaretDown, ClipboardText, Play, Plus, Sparkle, Warning, X } from "@phosphor-icons/react";
 import "./requirement.css";
@@ -33,9 +34,10 @@ function nextStep(requirement) {
   return { title: "查看执行进度", detail: "主 Agent 正在持续同步任务状态与可复用产物。", action: "打开执行项目" };
 }
 
-function RequirementComposer({ workspace, projects = [], projectId, onChooseWorkspace, onCreate, onStartPlan, creating, onClose }) {
+function RequirementComposer({ desktop, initialDraft, workspace, projects = [], projectId, onChooseWorkspace, onCreate, onStartPlan, creating, onClose }) {
   const [chosenProject, setChosenProject] = useState(projects.some(item => item.id === projectId && item.status === "active") ? projectId : "");
-  const [title, setTitle] = useState(""); const [outcome, setOutcome] = useState(""); const [body, setBody] = useState("");
+  const [title, setTitle] = useState(initialDraft?.title || ""); const [outcome, setOutcome] = useState(initialDraft?.outcome || ""); const [body, setBody] = useState(initialDraft?.body || "");
+  const [polishing, setPolishing] = useState(false);
   const executionMode = "auto";
   const [priority, setPriority] = useState("medium"); const [showMore, setShowMore] = useState(false); const [startNow, setStartNow] = useState(false);
   const [tokenBudget, setTokenBudget] = useState("80000");
@@ -45,7 +47,7 @@ function RequirementComposer({ workspace, projects = [], projectId, onChooseWork
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [creating, onClose]);
   const submit = async (event) => {
-    event.preventDefault(); if (!title.trim() || (startNow && (!workspace || !outcome.trim()))) return;
+    event.preventDefault(); if (creating || polishing || !title.trim() || (startNow && (!workspace || !outcome.trim()))) return;
     const created = await onCreate({ projectId: chosenProject || null, title: title.trim(), outcome: outcome.trim(), body: body.trim(), priority, status: startNow ? "ready_to_plan" : "inbox", workspacePath: workspace?.path || "", executionMode, sourceType: "manual", tokenBudget: Number(tokenBudget || 80000) });
     if (!created) return;
     onClose(); if (startNow) await onStartPlan(created);
@@ -56,12 +58,13 @@ function RequirementComposer({ workspace, projects = [], projectId, onChooseWork
       {!workspace ? <div className="workspace-notice"><Warning size={17} /><div><strong>还没有选择工作区</strong><span>请先在顶部选择一个本地项目。</span></div></div> : <div className="composer-workspace"><span>当前工作区</span><strong title={workspace.path}>{workspace.path}</strong><button type="button" onClick={onChooseWorkspace}>更换</button></div>}
       <ExecutionModeField />
       <ProjectSelect projects={projects.filter(item => item.status === "active")} value={chosenProject} onChange={setChosenProject} label="所属个人项目（可选）" />
-      <label>一句话描述要做的事 <b>必填</b><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：给产品加一个审批需求列表" /></label>
-      <label>做到什么程度算完成？ <b>{startNow ? "必填" : "可以之后再补"}</b><input value={outcome} onChange={(event) => setOutcome(event.target.value)} placeholder="例如：能创建、筛选、确认审批需求，并有测试" /></label>
+      <label>一句话描述要做的事 <b>必填</b><input aria-label="一句话描述要做的事" autoFocus maxLength={300} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：给产品加一个审批需求列表" /></label>
+      <label>做到什么程度算完成？ <b>{startNow ? "必填" : "可以之后再补"}</b><input aria-label="做到什么程度算完成" maxLength={2000} value={outcome} onChange={(event) => setOutcome(event.target.value)} placeholder="例如：能创建、筛选、确认审批需求，并有测试" /></label>
       <button type="button" className="more-options" onClick={() => setShowMore((value) => !value)} aria-expanded={showMore}><CaretDown size={15} weight="bold" />{showMore ? "收起补充信息" : "补充背景、链接或优先级（可选）"}</button>
-      {showMore ? <div className="more-fields"><label>补充说明<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="已有背景、限制、参考链接、验收细节……" /></label><label>优先级<SelectControl value={priority} onChange={(event) => setPriority(event.target.value)}><option value="urgent">紧急</option><option value="high">高</option><option value="medium">普通</option><option value="low">低</option></SelectControl></label><label>Token 预算<input type="number" min="1000" max="5000000" value={tokenBudget} onChange={(event) => setTokenBudget(event.target.value)} /><small>规划执行规模，不代表实际消耗。</small></label></div> : null}
+      {showMore ? <div className="more-fields"><label>补充说明<textarea aria-label="补充说明" maxLength={12000} value={body} onChange={(event) => setBody(event.target.value)} placeholder="已有背景、限制、参考链接、验收细节……" /></label><label>优先级<SelectControl value={priority} onChange={(event) => setPriority(event.target.value)}><option value="urgent">紧急</option><option value="high">高</option><option value="medium">普通</option><option value="low">低</option></SelectControl></label><label>Token 预算<input type="number" min="1000" max="5000000" value={tokenBudget} onChange={(event) => setTokenBudget(event.target.value)} /><small>规划执行规模，不代表实际消耗。</small></label></div> : null}
+      <PromptPolish desktop={desktop} draft={{ title, outcome, body }} disabled={creating} onBusyChange={setPolishing} onApply={next => { setTitle(next.title); setOutcome(next.outcome); setBody(next.body); if (next.body) setShowMore(true); }} />
       <label className="start-planning"><input type="checkbox" checked={startNow} onChange={(event) => setStartNow(event.target.checked)} /><span><strong>保存后立即生成计划</strong><small>只会分析和拆解，不会直接执行或修改代码。</small></span></label>
-      <footer><button type="button" className="secondary-button" onClick={onClose}>取消</button><button disabled={creating || !title.trim() || (startNow && (!workspace || !outcome.trim()))}>{creating ? "正在保存…" : <><Sparkle size={16} weight="fill" />{startNow ? "保存并生成计划" : "保存需求"}</>}</button></footer>
+      <footer><button type="button" className="secondary-button" onClick={onClose}>取消</button><button disabled={creating || polishing || !title.trim() || (startNow && (!workspace || !outcome.trim()))}>{creating ? "正在保存…" : <><Sparkle size={16} weight="fill" />{startNow ? "保存并生成计划" : "保存需求"}</>}</button></footer>
     </form>
   </div>;
 }
@@ -75,14 +78,16 @@ function RequirementQueue({ requirements, selectedId, onSelect, filter, setFilte
   </aside>;
 }
 
-function DraftDetail({ requirement, workspace, onChooseWorkspace, onSave, onStartPlan, busy }) {
+function DraftDetail({ desktop, requirement, workspace, onChooseWorkspace, onSave, onStartPlan, busy }) {
   const [title, setTitle] = useState(requirement.title);
   const [outcome, setOutcome] = useState(requirement.outcome || "");
   const [body, setBody] = useState(requirement.body || "");
   const mode = "auto";
   const [saving, setSaving] = useState(false);
+  const [polishing, setPolishing] = useState(false);
+  const locked = saving || busy || polishing || !["inbox", "clarifying", "ready_to_plan", "blocked"].includes(requirement.status);
   const save = async start => {
-    if (saving || busy) return;
+    if (locked) return;
     setSaving(true);
     try {
       const updated = await onSave(requirement, { title: title.trim(), outcome: outcome.trim(), body: body.trim() || title.trim(), workspacePath: workspace?.path || requirement.workspacePath || "", executionMode: mode, status: start ? "ready_to_plan" : "inbox" });
@@ -91,18 +96,19 @@ function DraftDetail({ requirement, workspace, onChooseWorkspace, onSave, onStar
   };
   return <section className="requirement-detail"><div className="requirement-detail-shell draft-detail">
     <header><span className="eyebrow">随手记 · 还未执行</span><h1>把这件事准备好</h1><p>可以继续记笔记；准备好时，再让 Agent 拆解计划。</p></header>
-    <label>任务名称<input value={title} onChange={e => setTitle(e.target.value)} maxLength={300} /></label>
-    <label>完成标准<input value={outcome} onChange={e => setOutcome(e.target.value)} placeholder="例如：交付一份带来源的 HTML 方案，可离线阅读" /></label>
-    <label>笔记与背景<textarea rows={6} value={body} onChange={e => setBody(e.target.value)} /></label>
+    <label>任务名称<input aria-label="任务名称" value={title} onChange={e => setTitle(e.target.value)} maxLength={300} /></label>
+    <label>完成标准<input aria-label="完成标准" maxLength={2000} value={outcome} onChange={e => setOutcome(e.target.value)} placeholder="例如：交付一份带来源的 HTML 方案，可离线阅读" /></label>
+    <label>笔记与背景<textarea aria-label="笔记与背景" maxLength={12000} rows={6} value={body} onChange={e => setBody(e.target.value)} /></label>
+    <PromptPolish desktop={desktop} requirementId={requirement.id} draft={{ title, outcome, body }} disabled={saving || busy || !["inbox", "clarifying", "ready_to_plan", "blocked"].includes(requirement.status)} onBusyChange={setPolishing} onApply={next => { setTitle(next.title); setOutcome(next.outcome); setBody(next.body); }} />
     <ExecutionModeField />
     <div className="draft-workspace"><span>工作区</span><strong title={workspace?.path || requirement.workspacePath}>{workspace?.name || requirement.workspacePath || "尚未选择"}</strong><button onClick={onChooseWorkspace}>选择文件夹</button></div>
-    <footer><button disabled={saving || busy || !title.trim()} onClick={() => save(false)}>保存笔记</button><button className="primary-button" disabled={saving || busy || !title.trim() || !outcome.trim() || !(workspace?.path || requirement.workspacePath)} onClick={() => save(true)}><Play size={14} weight="fill" />{saving || busy ? "正在准备…" : "开始做 · 拆解计划"}</button></footer><small>先生成子任务和依赖，确认计划后才执行。保存笔记不消耗模型 Token。</small>
+    <footer><button disabled={locked || !title.trim()} onClick={() => save(false)}>保存笔记</button><button className="primary-button" disabled={locked || !title.trim() || !outcome.trim() || !(workspace?.path || requirement.workspacePath)} onClick={() => save(true)}><Play size={14} weight="fill" />{saving || busy ? "正在准备…" : "开始做 · 拆解计划"}</button></footer><small>先生成子任务和依赖，确认计划后才执行。保存笔记不消耗模型 Token。</small>
   </div></section>;
 }
 
-function RequirementDetail({ requirement, workspace, onChooseWorkspace, onSaveDraft, projects, onLinkProject, onStartPlan, onOpenMission, claiming, onCreate }) {
+function RequirementDetail({ desktop, requirement, workspace, onChooseWorkspace, onSaveDraft, projects, onLinkProject, onStartPlan, onOpenMission, claiming, onCreate }) {
   if (!requirement) return <section className="requirement-detail empty"><div className="empty-icon"><ClipboardText size={27} /></div><h2>从一件想完成的事开始</h2><p>写下想达成的结果，主 Agent 会先准备计划，再由你决定是否执行。</p><button onClick={onCreate}><Plus size={16} />新建工作</button><div className="how-it-works"><span>1 写清目标</span><ArrowRight size={14} /><span>2 看执行计划</span><ArrowRight size={14} /><span>3 确认后执行</span></div></section>;
-  if (!requirement.missionId) return <DraftDetail key={requirement.id} requirement={requirement} workspace={workspace} onChooseWorkspace={onChooseWorkspace} onSave={onSaveDraft} onStartPlan={onStartPlan} busy={claiming} />;
+  if (!requirement.missionId) return <DraftDetail desktop={desktop} key={requirement.id} requirement={requirement} workspace={workspace} onChooseWorkspace={onChooseWorkspace} onSave={onSaveDraft} onStartPlan={onStartPlan} busy={claiming} />;
   const state = statusFor(requirement.status); const next = nextStep(requirement); const canStart = !requirement.missionId && ["inbox", "clarifying", "ready_to_plan", "blocked"].includes(requirement.status); const action = () => canStart ? onStartPlan(requirement) : onOpenMission(requirement);
   const hasRail = Boolean(requirement.missionId);
   return <section className="requirement-detail"><div className="requirement-detail-shell"><header className="detail-heading"><div><span className="eyebrow">工作目标</span><h1>{requirement.title}</h1><div className="detail-status"><span className={`status-dot ${state.tone}`} />{state.label}<span className="detail-updated">更新于 {relativeTime(requirement.updatedAt)}</span></div></div></header>
@@ -119,6 +125,7 @@ export function RequirementHub({ desktop, workspace, codexStatus, onOpenMission,
   const loadProjects = useCallback(async () => { if (desktop?.personal) { const items = await desktop.personal.projects(); setProjects(items); setProjectId(current => items.some(item => item.id === current) ? current : ""); } }, [desktop]);
   useEffect(() => { loadProjects().catch(err => setError(err.message)); const off = desktop?.personal?.onChange?.(() => loadProjects().catch(err => setError(err.message))); return () => off?.(); }, [desktop, loadProjects]);
   const [capture, setCapture] = useState("");
+  const [composerDraft, setComposerDraft] = useState(null);
   const [requirements, setRequirements] = useState([]); const [selectedId, setSelectedId] = useState(initialSelectedId); const [creating, setCreating] = useState(false); const [claiming, setClaiming] = useState(false); const [error, setError] = useState(""); const [composerOpen, setComposerOpen] = useState(false); const [filter, setFilter] = useState("all");
   useEffect(() => { if (selectedId) onSelectionChange?.(selectedId); }, [selectedId, onSelectionChange]);
   const loadRevision = useRef(0);
@@ -154,7 +161,7 @@ export function RequirementHub({ desktop, workspace, codexStatus, onOpenMission,
   return <section className="requirement-hub" data-testid="requirement-hub"><header className="requirement-hub-header"><div><h1>工作</h1><p>先记下来，再开始做。拆解、执行、验收与归档在一条流程里。</p></div><div className="requirement-header-actions"><button className="quiet-action" onClick={() => setPersonalOpen(true)}>项目与记忆</button><button className="quiet-action" onClick={load}><ArrowsClockwise size={15} />刷新</button><button className="new-requirement" onClick={() => setComposerOpen(true)}><Plus size={16} />新建工作</button>{readyCount ? <button className="claim-next" onClick={startNext} disabled={claiming}><Play size={14} weight="fill" />{claiming ? "正在启动…" : `开始下一条 (${readyCount})`}</button> : null}</div></header>
     {!workspace ? <div className="workspace-callout"><Warning size={17} /><div><strong>先选择一个本地工作区</strong><span>工作记录保存在本机，Agent 在你选择的目录中执行。</span></div><button onClick={onChooseWorkspace}>选择工作区</button></div> : <div className="workspace-strip"><span>当前工作区</span><strong>{workspace.name}</strong><small title={workspace.path}>{workspace.path}</small></div>}{error ? <div className="requirement-error"><Warning size={15} />{error}<button onClick={() => setError("")} aria-label="关闭提示"><X size={14} /></button></div> : null}
     {desktop?.personal && !personalOpen ? <div className="work-project-bar"><ProjectSelect projects={projects} value={projectId} onChange={setProjectId} all /><small>{projectId ? "查看这个项目在所有工作区的工作" : "项目可跨多次工作持续保留目标"}</small></div> : null}
-    <form className="quick-capture" aria-label="随手记录" onSubmit={async event => { event.preventDefault(); if (!capture.trim() || creating) return; const saved = await create({ title: capture.trim(), status: "inbox", workspacePath: workspace?.path || "", projectId: projectId || null }); if (saved) setCapture(""); }}><Plus size={17} /><input aria-label="记录一件事" placeholder="记一个想法、待办或笔记…  回车保存，不会开始执行" value={capture} onChange={event => setCapture(event.target.value)} maxLength={300} /><button disabled={!desktop || creating || !capture.trim()}>{creating ? "保存中…" : "记下来"}</button></form>
-    <div className="requirement-layout"><RequirementQueue requirements={sorted} selectedId={selectedId} onSelect={id => { setSelectedId(id); setPersonalOpen(false); }} filter={filter} setFilter={setFilter} onCreate={() => setComposerOpen(true)} />{personalOpen ? <PersonalPanel desktop={desktop} projects={projects} projectId={projectId} onProjectChange={setProjectId} onChanged={async () => { await loadProjects(); await load(); }} onBack={() => setPersonalOpen(false)} onOpenMission={onOpenMission} onNewWork={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} /> : <RequirementDetail requirement={selected} workspace={workspace} onChooseWorkspace={onChooseWorkspace} onSaveDraft={saveDraft} projects={projects} onLinkProject={linkProject} onStartPlan={startPlan} onOpenMission={onOpenMission} claiming={claiming} onCreate={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} />}</div>{composerOpen ? <RequirementComposer workspace={workspace} projects={projects} projectId={projectId} onChooseWorkspace={onChooseWorkspace} creating={creating} onCreate={create} onStartPlan={startPlan} onClose={() => setComposerOpen(false)} /> : null}
+    <form className="quick-capture" aria-label="随手记录" onSubmit={async event => { event.preventDefault(); if (!capture.trim() || creating) return; const original = capture; const saved = await create({ title: capture.trim(), status: "inbox", workspacePath: workspace?.path || "", projectId: projectId || null }); if (saved) setCapture(current => current === original ? "" : current); }}><Plus size={17} /><input aria-label="记录一件事" placeholder="记一个想法、待办或笔记…  回车保存，不会开始执行" value={capture} onChange={event => setCapture(event.target.value)} maxLength={300} /><button type="button" disabled={creating || !capture.trim()} onClick={() => { setComposerDraft({ title: capture, outcome: "", body: "" }); setComposerOpen(true); }}><Sparkle size={14} />润色一下</button><button disabled={!desktop || creating || !capture.trim()}>{creating ? "保存中…" : "记下来"}</button></form>
+    <div className="requirement-layout"><RequirementQueue requirements={sorted} selectedId={selectedId} onSelect={id => { setSelectedId(id); setPersonalOpen(false); }} filter={filter} setFilter={setFilter} onCreate={() => setComposerOpen(true)} />{personalOpen ? <PersonalPanel desktop={desktop} projects={projects} projectId={projectId} onProjectChange={setProjectId} onChanged={async () => { await loadProjects(); await load(); }} onBack={() => setPersonalOpen(false)} onOpenMission={onOpenMission} onNewWork={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} /> : <RequirementDetail desktop={desktop} requirement={selected} workspace={workspace} onChooseWorkspace={onChooseWorkspace} onSaveDraft={saveDraft} projects={projects} onLinkProject={linkProject} onStartPlan={startPlan} onOpenMission={onOpenMission} claiming={claiming} onCreate={() => workspace ? setComposerOpen(true) : onChooseWorkspace?.()} />}</div>{composerOpen ? <RequirementComposer desktop={desktop} initialDraft={composerDraft} workspace={workspace} projects={projects} projectId={projectId} onChooseWorkspace={onChooseWorkspace} creating={creating} onCreate={async input => { const saved = await create(input); if (saved && composerDraft) setCapture(current => current === composerDraft.title ? "" : current); return saved; }} onStartPlan={startPlan} onClose={() => { setComposerOpen(false); setComposerDraft(null); }} /> : null}
   </section>;
 }
