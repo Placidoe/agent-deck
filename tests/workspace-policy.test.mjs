@@ -137,6 +137,60 @@ test("unstarted legacy workspace assessment preserves task IDs and approval gate
   await assert.rejects(f.orchestrator.assessWorkspace(mission.id), /尚未创建/);
 });
 
+for (const native of [false, true]) test(`approve a legacy ordinary folder assesses first and requires a second approval (${native ? "native" : "external"})`, async t => {
+  const f = fixture(t, null, native);
+  const mission = f.store.createMission({ title: "Legacy", outcome: "Keep task", cwd: f.source, ...(native ? { runtimeMode: "agent_deck", provider: "deepseek" } : {}) });
+  const legacyPlan = plan(decision("managed")); delete legacyPlan.workspace;
+  f.store.savePlan(mission.id, legacyPlan);
+  const taskId = f.store.getMission(mission.id).tasks[0].id;
+  const result = await f.orchestrator.approve(mission.id);
+  assert.equal(result.status, "planning");
+  assert.equal(result.executionMode, "auto");
+  assert.equal(result.spec.workspacePending, true);
+  assert.equal(result.tasks[0].id, taskId);
+  assert.equal(result.tasks[0].agentThreadId, null);
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[0].allowMutations, false);
+  assert.equal(f.calls[1].outputSchema, workspaceSchema);
+  assert.equal(fs.existsSync(path.join(f.source, ".git")), false);
+  await assert.rejects(f.orchestrator.approve(mission.id), /not ready/);
+  await f.emit(mission, decision("managed"), "assessment-on-approve");
+  assert.equal(f.store.getMission(mission.id).status, "ready");
+  assert.equal(f.store.getMission(mission.id).tasks[0].agentThreadId, null);
+  assert.equal(f.store.getMission(mission.id).events.some(e => e.type === "mission.approved"), false);
+  assert.equal(f.calls.length, 2);
+  await f.orchestrator.approve(mission.id);
+  assert.equal(f.store.getMission(mission.id).tasks[0].status, "running");
+  assert.equal(f.store.getMission(mission.id).tasks[0].id, taskId);
+  assert.equal(fs.existsSync(path.join(f.source, ".git")), false);
+});
+
+for (const state of ["unborn", "missing-decision", "stale-git"]) test(`approve recovers workspace ${state} through read-only assessment`, async t => {
+  const f = fixture(t);
+  const mission = f.store.createMission({ title: "Plan", outcome: "Keep task", cwd: f.source, executionMode: state === "unborn" ? "code" : "auto" });
+  const spec = plan(decision("existing_git"));
+  if (state === "missing-decision" || state === "unborn") delete spec.workspace;
+  if (state === "unborn") git(f.source, ["init", "-q"]);
+  f.store.savePlan(mission.id, spec);
+  const result = await f.orchestrator.approve(mission.id);
+  assert.equal(result.status, "planning");
+  assert.equal(result.tasks[0].agentThreadId, null);
+  assert.equal(f.calls[1].allowMutations, false);
+  assert.equal(fs.readdirSync(f.worktrees.rootDirectory).length, 0);
+  if (state === "unborn") assert.throws(() => git(f.source, ["rev-parse", "--verify", "HEAD"]));
+});
+
+test("approve cannot silently migrate a legacy plan with an existing worker", async t => {
+  const f = fixture(t);
+  const mission = f.store.createMission({ title: "Started", outcome: "Do not migrate", cwd: f.source });
+  const spec = plan(decision("managed")); delete spec.workspace;
+  f.store.savePlan(mission.id, spec);
+  f.store.updateTask(f.store.getMission(mission.id).tasks[0].id, { agentThreadId: "existing-worker" });
+  await assert.rejects(f.orchestrator.approve(mission.id), /尚未创建/);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.store.getMission(mission.id).executionMode, "code");
+});
+
 test("missing model decision cannot silently downgrade isolation", async t => {
   const f = fixture(t);
   const mission = await f.orchestrator.create({ title: "Output", outcome: "Save output", cwd: f.source });

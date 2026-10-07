@@ -219,7 +219,7 @@ function WorkspacePreparation({ mission }) {
 function SpecView({ desktop, mission, onApprove, onRetryPlan, onCodexRetry, busy }) {
   const spec = mission.spec;
   if (canRetryCodexPlan(mission)) return <CodexPlanRecovery key={mission.id} desktop={desktop} mission={mission} busy={busy} onRetry={onCodexRetry} />;
-  if (mission.status === "planning") return <section className="mission-empty"><Sparkle size={30} weight="duotone" /><h2>Main Agent 正在生成真实需求表单</h2><p>Planner Thread：{mission.mainThreadId || "正在创建"}</p><small>状态只由 Codex Turn 事件更新。</small></section>;
+  if (mission.status === "planning") return <section className="mission-empty" role="status"><Sparkle size={30} weight="duotone" /><h2>{spec?.workspacePending ? "Agent 正在评估工作区" : "Main Agent 正在生成执行计划"}</h2><p>{spec?.workspacePending ? "原任务拆解保留。这里只读检查环境，不会初始化目录或启动 Worker；方案返回后请再次确认执行。" : "正在只读规划；计划确认前不会启动 Worker。"}</p><small>Planner Thread：{mission.mainThreadId || "正在创建"}</small></section>;
   if (!spec) return <section className="mission-empty"><Warning size={30} /><h2>需求表单生成失败</h2><p>{/invalid_json_schema|Invalid structured output schema/.test(mission.error || "") ? "生成计划的输出结构不符合模型要求。更新到修复版后，可以在原会话重新生成；确认计划前不会启动子任务。" : mission.error || "No structured plan was persisted."}</p>{mission.status === "failed" && mission.mainThreadId && !mission.tasks.length && <button className="primary-button" disabled={busy} onClick={onRetryPlan}><ArrowsClockwise size={16} />{busy ? "正在提交…" : "重新生成计划"}</button>}<details><summary>技术详情</summary><p>{mission.error}</p></details></section>;
   const runtime = spec.runtime || {};
   const routeLabel = runtime.mode === "direct" ? "直通执行 · 跳过 Planner" : runtime.tier === "orchestrated" ? "复杂编排" : "协同编排";
@@ -653,7 +653,17 @@ export function MissionWorkspace({ desktop, workspace, codexStatus, onChooseWork
 
   async function perform(action) {
     setBusy(true); setError("");
-    try { const result = await action(); if (result?.id) setActiveMission(result); return result; } catch (actionError) { setError(actionError.message || String(actionError)); }
+    try {
+      const result = await action();
+      if (result?.id) {
+        setActiveMission(result);
+        if (result.status === "planning" && result.spec?.workspacePending) {
+          setSelectedTaskId(null); setInspectorPanel("brief"); setTab("spec");
+          setNotice(""); // The preparation view explains this in normal flow.
+        }
+      }
+      return result;
+    } catch (actionError) { setError(actionError.message || String(actionError)); }
     finally { setBusy(false); }
   }
 

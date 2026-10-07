@@ -255,16 +255,18 @@ test("workspace inspection separates non-repository, missing directory, and unbo
   assert.equal(manager.assertReady(repository).available, true);
 }));
 
-test("approval and retry reject an invalid workspace before changing state or creating workers", async () => withTempDirAsync(async directory => {
+test("legacy approval starts only workspace assessment; failed assessment cannot dispatch through retry", async () => withTempDirAsync(async directory => {
   const store = new MissionStore(path.join(directory, "preflight.sqlite3"));
   const worktrees = new WorktreeManager(path.join(directory, "worktrees"));
   let threads = 0;
   const orchestrator = new MissionOrchestrator({ store, worktrees, codex: { createThread() { threads++; throw new Error("must not dispatch"); } } });
   const mission = store.createMission({ title: "Preflight", outcome: "Keep the plan", cwd: directory });
   store.savePlan(mission.id, normalizePlan(validPlan));
-  await assert.rejects(orchestrator.approve(mission.id), /not_git_repository/);
+  await assert.rejects(orchestrator.approve(mission.id), /must not dispatch/);
   let current = store.getMission(mission.id);
-  assert.equal(current.status, "ready");
+  assert.equal(current.status, "blocked");
+  assert.equal(current.executionMode, "auto");
+  assert.equal(current.spec.workspacePending, true);
   assert.ok(current.tasks.every(task => task.status === "queued" && !task.agentThreadId));
   assert.ok(!current.events.some(event => event.type === "mission.approved"));
   const task = current.tasks[0];
@@ -274,7 +276,7 @@ test("approval and retry reject an invalid workspace before changing state or cr
   current = store.getMission(mission.id);
   assert.equal(current.status, "blocked");
   assert.equal(current.tasks[0].error, "original workspace failure");
-  assert.equal(threads, 0);
+  assert.equal(threads, 1);
   assert.deepEqual(fs.readdirSync(worktrees.rootDirectory), []);
   store.close();
 }));
@@ -749,6 +751,7 @@ test("orchestrator turns a real provider plan into claimed worker threads and re
   const store = new MissionStore(path.join(directory, "agent-deck.sqlite3"));
   const worktrees = {
     assertReady() { return { available: true }; },
+    inspect() { return { available: true }; },
     create({ taskKey }) { const worktreePath = path.join(directory, taskKey); fs.mkdirSync(worktreePath); return { path: worktreePath, branch: `agentdeck/${taskKey.toLowerCase()}` }; },
     evidence() { return { files: ["src/real.js"], diffStat: "1 file changed", clean: false }; },
     commit() { return { commitHash: "a".repeat(40), files: [], diffStat: "", clean: true }; },
@@ -1128,7 +1131,7 @@ test("canceling a mission interrupts active turns and preserves completed eviden
     async interrupt(input) { interrupted.push(input); },
   };
   const store = new MissionStore(path.join(directory, "cancel.sqlite3"));
-  const worktrees = { assertReady() { return { available: true }; }, create({ taskKey }) { const target = path.join(directory, taskKey); fs.mkdirSync(target); return { path: target, branch: `agentdeck/${taskKey}` }; } };
+  const worktrees = { assertReady() { return { available: true }; }, inspect() { return { available: true }; }, create({ taskKey }) { const target = path.join(directory, taskKey); fs.mkdirSync(target); return { path: target, branch: `agentdeck/${taskKey}` }; } };
   const orchestrator = new MissionOrchestrator({ codex, store, worktrees });
   const created = await orchestrator.create({ title: "Cancel", outcome: "Stop safely", cwd: directory, executionMode: "code", maxWorkers: 1, orchestrationMode: "mission" });
   await orchestrator.handleCodexEvent({ method: "item/completed", params: { threadId: created.mainThreadId, item: { id: "plan", type: "agentMessage", text: JSON.stringify({ ...validPlan, tasks: [validPlan.tasks[0]] }) } } });

@@ -23,12 +23,25 @@ if (process.env.AGENT_DECK_WORKSPACE_QA) {
 }
 const artifacts = new ArtifactService({ store });
 const library = new LibraryService({ store, artifacts });
+// Exercise the actual approve controller against the disposable real ledger.
+// Transport is deliberately a no-inference stub; no real worker is dispatched.
+const approveQa = process.env.AGENT_DECK_APPROVE_QA ? new (require("../desktop/mission-orchestrator.cjs").MissionOrchestrator)({
+  store, worktrees: new (require("../desktop/worktree-manager.cjs").WorktreeManager)(path.join(sandbox, "worktrees")),
+  codex: { createThread: async input => {
+    if (input.allowMutations !== false) throw new Error("QA prohibits workers");
+    return { thread: { id: "qa-workspace-planner-no-inference" }, model: "qa-no-inference" };
+  }, sendTurn: async input => {
+    if (input.allowMutations !== false) throw new Error("QA prohibits execution");
+    return { id: "qa-workspace-assessment-no-inference" };
+  } },
+}) : null;
 const modelClient = process.env.AGENT_DECK_MODEL_QA ? new (require("../desktop/codex-app-server.cjs").CodexAppServer)() : null;
 if (process.env.AGENT_DECK_WORKFLOW_QA) store.library.createFolder({ name: "产品文档 · 只读测试", rootPath: fs.realpathSync(path.join(__dirname, "../docs")) });
 const workspace = JSON.parse(fs.readFileSync(path.join(profile, "workspace.json"), "utf8"));
 if (workspaceQaCandidate) workspace.path = workspaceQaCandidate.cwd;
 workspace.name = path.basename(workspace.path);
 const reads = {
+  ...(approveQa ? { "missions:approve": id => approveQa.approve(id) } : {}),
   "workspace:current": () => workspace,
   "codex:status": () => ({ available: false, authenticated: false, error: "只读布局验收 · 未连接执行器", models: [] }),
   "providers:list": () => [],

@@ -416,6 +416,16 @@ class MissionOrchestrator extends EventEmitter {
 
   async approve(missionId) {
     if (this.approving.has(missionId)) throw new Error("工作区正在准备，请勿重复批准");
+    const candidate = this.store.getMission(missionId);
+    if (!candidate?.spec || candidate.status !== "ready") throw new Error("Mission plan is not ready for dispatch");
+    // Approval is not permission to skip workspace preparation. Route old
+    // ordinary-folder plans and stale/missing automatic decisions through the
+    // same read-only assessment, then require renewed human approval.
+    const workspace = candidate.spec.workspace;
+    const needsAssessment = candidate.executionMode === "auto"
+      ? !workspace || candidate.spec.workspacePending || (workspace.strategy === "existing_git" && !this.worktrees.inspect(candidate.cwd).available)
+      : candidate.executionMode === "code" && !this.worktrees.inspect(candidate.cwd).available;
+    if (needsAssessment) return this.assessWorkspace(missionId);
     this.approving.add(missionId);
     try {
     const mission = this.store.getMission(missionId);
