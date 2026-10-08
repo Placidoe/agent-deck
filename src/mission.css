@@ -70,23 +70,7 @@
 .agent-node-copy { min-width:0; }.agent-node-copy strong { display:block; overflow:hidden; font-size:12px; font-weight:650; text-overflow:ellipsis; white-space:nowrap; }.agent-node-copy span { display:block; margin:3px 0 7px; overflow:hidden; color:#8b969f; font-size:9.5px; text-overflow:ellipsis; white-space:nowrap; }.agent-node-copy>div { height:3px; overflow:hidden; border-radius:5px; background:#2b343a; }.agent-node-copy>div i { display:block; height:100%; border-radius:inherit; background:#66d27b; }.agent-node.blue .agent-node-copy>div i { background:#58aef9; }.agent-node.amber .agent-node-copy>div i { background:#eeb23a; }.agent-node.purple .agent-node-copy>div i { background:#b887e6; }
 .agent-node-state { align-self:start; display:flex; align-items:center; gap:4px; color:#94a09b; font-size:8px; }.agent-node-state i { width:5px; height:5px; border-radius:50%; background:#64d27a; }.agent-node.amber .agent-node-state i,.agent-node.attention .agent-node-state i { background:#efb339; }.agent-node.muted .agent-node-state i,.agent-node.queued .agent-node-state i { background:#77818a; }.agent-node .react-flow__handle { width:5px; height:5px; border:0; background:#64717d; }
 
-.agent-identity-avatar { --avatar-accent:#65b7ff; --avatar-border:#356f9e; --avatar-bg:#142c40; position:relative; display:grid; flex:0 0 auto; place-items:center; overflow:visible; border:1px solid var(--avatar-border); border-radius:50%; color:var(--avatar-accent); background:radial-gradient(circle at 32% 24%,color-mix(in srgb,var(--avatar-accent) 22%,transparent),transparent 48%),var(--avatar-bg); box-shadow:inset 0 0 12px color-mix(in srgb,var(--avatar-accent) 8%,transparent),0 4px 12px #0004; }
-.agent-identity-avatar svg { width:52%; height:52%; }
-.agent-identity-avatar.xs { width:22px; height:22px; }
-.agent-identity-avatar.sm { width:28px; height:28px; }
-.agent-identity-avatar.md { width:34px; height:34px; }
-.agent-identity-avatar.lg { width:38px; height:38px; }
-.agent-identity-avatar.xl { width:42px; height:42px; }
-.agent-identity-avatar.main { --avatar-accent:#70b8ff; --avatar-border:#3779ad; --avatar-bg:#142d42; }
-.agent-identity-avatar.builder { --avatar-accent:#73d58a; --avatar-border:#387646; --avatar-bg:#17321f; }
-.agent-identity-avatar.reviewer { --avatar-accent:#e6aaf4; --avatar-border:#735482; --avatar-bg:#2a1f33; }
-.agent-identity-avatar.architect { --avatar-accent:#f0ba53; --avatar-border:#7b602b; --avatar-bg:#342911; }
-.agent-identity-avatar.researcher { --avatar-accent:#65c7d4; --avatar-border:#326f78; --avatar-bg:#153136; }
-.agent-identity-avatar.you { --avatar-accent:#9ba7ff; --avatar-border:#5862a0; --avatar-bg:#222743; }
-.avatar-presence { position:absolute; right:-1px; bottom:-1px; width:8px; height:8px; border:2px solid #11161a; border-radius:50%; background:#77828c; }
-.avatar-presence.running,.avatar-presence.completed { background:#64d17a; }
-.avatar-presence.attention { background:#efb43b; }
-.agent-node>.agent-identity-avatar { border-radius:11px; }
+/* Identity primitives live in appearance.css, including non-Mission views. */
 
 .message-bus { display:grid; height:100%; grid-template-rows:44px minmax(0,1fr); background:#0d1114; }.message-bus.compact { border-top:1px solid var(--line); }
 .message-bus>header { display:flex; align-items:center; gap:12px; padding:0 13px; border-bottom:1px solid #252d34; background:#12171b; }.message-bus>header>div:first-child { display:flex; align-items:center; gap:7px; }.message-bus>header svg { color:#55a8f6; }.message-bus>header strong { font-size:11px; }.message-bus>header span { color:#6f7b85; font-size:8.5px; }.message-bus nav { display:flex; gap:3px; margin-left:10px; }.message-bus nav button { padding:4px 8px; border:0; border-radius:5px; color:#75808a; background:transparent; font-size:8.5px; text-transform:capitalize; }.message-bus nav button.active { color:#dce2e7; background:#283038; }.bus-health { display:flex; align-items:center; gap:5px; margin-left:auto; color:#78d78b!important; font-size:8.5px; }.bus-health i { width:6px; height:6px; border-radius:50%; background:#64d179; box-shadow:0 0 7px #64d179; }

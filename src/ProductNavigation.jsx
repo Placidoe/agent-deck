@@ -1,10 +1,11 @@
 import { ArrowLeft, BellRinging, Briefcase, FileCode, FolderOpen, SlidersHorizontal } from "@phosphor-icons/react";
 import { productSection } from "./work-navigation.js";
+import { BrandMark } from "./BrandMark.jsx";
 
 export function ProductNavigation({ view, onNavigate, badge, health, connected }) {
   const section = productSection(view);
   return <aside className="product-navigation">
-    <div className="product-wordmark"><span className="product-symbol">a</span><strong>Agent Deck</strong></div>
+    <div className="product-wordmark"><span className="product-symbol"><BrandMark /></span><strong>Agent Deck</strong></div>
     <nav aria-label="主导航">{[["work", "工作", Briefcase, "requirements"], ["attention", "待我处理", BellRinging, "attention"], ["results", "成果", FileCode, "results"]].map(([id, title, Icon, target]) =>
       <button type="button" key={id} aria-current={section === id ? "page" : undefined} onClick={() => onNavigate(target)}><Icon size={18} /><span>{title}</span>{id === "attention" && badge > 0 ? <b>{badge > 99 ? "99+" : badge}</b> : null}</button>
     )}</nav>

@@ -17,7 +17,7 @@ module.exports = {
     main: "desktop/main.cjs",
   },
   mac: {
-    icon: "desktop/assets/icon.png",
+    icon: "desktop/assets/icon-v2.png",
     category: "public.app-category.developer-tools",
     target: ["dir"],
     artifactName: "Agent-Deck-${version}-${arch}.${ext}",

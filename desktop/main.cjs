@@ -98,12 +98,15 @@ function resolveActiveWorkspaceFile(file) {
 }
 
 function createWindow() {
+  // Packaged Finder/Dock icon and development windows share the new brand asset.
+  if (process.platform === "darwin") app.dock?.setIcon(path.join(__dirname,"assets/icon-v2.png"));
   mainWindow = new BrowserWindow({
     width: 1540,
     height: 960,
     minWidth: 1120,
     minHeight: 720,
     title: "Agent Deck",
+    icon: path.join(__dirname,"assets/icon-v2.png"),
     backgroundColor: process.platform === "darwin" ? "#00000000" : "#0b0d0f",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 17, y: 15 },
