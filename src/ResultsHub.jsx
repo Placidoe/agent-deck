@@ -12,9 +12,16 @@ export function ResultsHub({ desktop, onOpen }) {
   const [query, setQuery] = useState(""), [kind, setKind] = useState(""), [files, setFiles] = useState([]), [history, setHistory] = useState([]);
   const [before, setBefore] = useState(null), [relativePath, setRelativePath] = useState("."), [offset, setOffset] = useState(null);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [loading, setLoading] = useState(false), [refresh, setRefresh] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [sessionWork, setSessionWork] = useState(null), [sessions, setSessions] = useState([]), [newFolder, setNewFolder] = useState(false), [name, setName] = useState(""), [preview, setPreview] = useState(null), [publish, setPublish] = useState(null);
   const revision = useRef(0), search = useDeferredValue(query), folder = overview.folders.find(item => item.id === folderId);
-  const load = useCallback(async () => { if (!desktop?.library) return; try { setOverview(await desktop.library.overview()); } catch (err) { setError(err.message); } }, [desktop]);
+  const load = useCallback(async () => { if (!desktop?.library) return false; try { setOverview(await desktop.library.overview()); return true; } catch (err) { setError(err.message); return false; } }, [desktop]);
+  const refreshOverview = async () => {
+    if (refreshing || !desktop?.library) return;
+    setRefreshing(true); setError(""); setNotice("");
+    try { if (await load()) { setRefresh(n => n + 1); setNotice("已重新读取成果目录。"); } }
+    finally { setRefreshing(false); }
+  };
   useEffect(() => { load(); let timer; const off = desktop?.missions?.onUpdate?.(() => { clearTimeout(timer); timer = setTimeout(() => { load(); setRefresh(n => n + 1); }, 600); }); return () => { clearTimeout(timer); off?.(); }; }, [load, desktop]);
   useEffect(() => {
     if (!desktop?.library || section !== "library") return;
@@ -37,7 +44,7 @@ export function ResultsHub({ desktop, onOpen }) {
   const openSessions = item => act(async () => { const rows = await desktop.library.sessions({ missionId: item.id }); setSessions(rows); setSessionWork(item); });
   const connect = async () => { const saved = await act(() => desktop.library.connect()); if (saved) { await load(); chooseFolder(saved.id, true); } };
   useEffect(() => {
-    if (!publish && !preview && !newFolder && !sessionWork) return;
+    if (publish || (!preview && !newFolder && !sessionWork)) return;
     const previous = document.activeElement;
     const dialog = document.querySelector(publish ? ".publish-modal" : preview ? ".library-preview" : newFolder ? ".workflow-small-modal" : ".session-history-modal");
     const focusable = () => [...(dialog?.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),iframe,[tabindex="0"]') || [])].filter(element => element.getClientRects().length);
@@ -51,7 +58,7 @@ export function ResultsHub({ desktop, onOpen }) {
     return () => { document.removeEventListener("keydown", keydown); if (previous?.isConnected) previous.focus(); };
   }, [Boolean(publish), Boolean(preview), newFolder, Boolean(sessionWork)]);
   return <section className="results-hub library-hub">
-    <header><div><h1>成果</h1><p>交付有验收，文件有归处。登记即入库，不等于已通过验收。</p></div><button onClick={() => { load(); setRefresh(n => n + 1); }} aria-label="刷新成果"><ArrowsClockwise size={16} /></button></header>
+    <header><div><h1>成果</h1><p>交付有验收，文件有归处。登记即入库，不等于已通过验收。</p></div><button onClick={refreshOverview} disabled={refreshing || loading || !desktop?.library} aria-label="刷新成果" aria-busy={refreshing} title={!desktop?.library ? "需要桌面环境读取本地成果" : refreshing || loading ? "正在重新读取…" : "重新读取成果目录"}><ArrowsClockwise size={16} /></button></header>
     <nav className="workflow-tabs" aria-label="成果视图"><button className={section === "library" ? "active" : ""} onClick={() => setSection("library")}><Folder size={16} />文档与资产</button><button className={section === "reviews" ? "active" : ""} onClick={() => setSection("reviews")}><CheckCircle size={16} />验收清单 <b>{overview.reviews.length}</b></button></nav>
     {error && <p className="workflow-alert" role="alert">{error}<button onClick={() => setError("")} aria-label="关闭错误"><X size={14} /></button></p>}
     {notice && <p className="workflow-notice" role="status">{notice}<button onClick={() => setNotice("")} aria-label="关闭提示"><X size={14} /></button></p>}

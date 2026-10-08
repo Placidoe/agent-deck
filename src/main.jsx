@@ -5,12 +5,14 @@ import "./styles.css";
 import "./product-shell.css";
 import "./workflow.css";
 import "./appearance.css";
-import { applyTheme, readTheme } from "./appearance.js";
+import { initializeAppearance } from "./appearance.js";
 
 // Resolve before first React paint, not in an effect (no blue flash on launch).
-let savedTheme = "blue";
-try { savedTheme = readTheme(window.localStorage); } catch { /* Restricted preview storage. */ }
-applyTheme(savedTheme, document.documentElement);
+let appearanceStorage;
+try { appearanceStorage = window.localStorage; } catch { /* Restricted preview storage. */ }
+const disposeAppearance = initializeAppearance({ root: document.documentElement, storage: appearanceStorage,
+  media: window.matchMedia("(prefers-color-scheme: dark)"), events: window });
+if (import.meta.hot) import.meta.hot.dispose(disposeAppearance);
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>

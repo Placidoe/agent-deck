@@ -4,13 +4,15 @@ import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { qaAppearance } from "./ui-qa-appearance.mjs";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const output = path.join(root, "qa/waiting"); fs.mkdirSync(output, { recursive: true });
+const output = path.join(root, "qa/waiting", process.env.AGENT_DECK_QA_APPEARANCE || "system"); fs.mkdirSync(output, { recursive: true });
 const env = { ...process.env, AGENT_DECK_WAITING_QA: "1" }; delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({ executablePath: path.resolve(root, "../research/labs/grokbot-desktop/node_modules/.bin/electron"), args: [path.join(root, "scripts/design-qa-main.cjs")], env });
 const report = { source: "Disposable real-ledger copy + labelled waiting fixture; real renderer/IPC, no inference or OS notifications", checks: [], errors: [] };
 try {
   const page = await app.firstWindow(); page.on("pageerror", error => report.errors.push(error.message));
+  await qaAppearance(page);
   const nav = page.getByRole("navigation", { name: "主导航" });
   await page.locator(".waiting-strip button").waitFor();
   for (const [w, h] of [[1540,960],[1120,720]]) {

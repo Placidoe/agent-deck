@@ -6,15 +6,28 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { THEMES } from "../src/appearance.js";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const output = path.join(root,"qa/appearance"); fs.mkdirSync(output,{recursive:true});
+const output = path.join(root,"qa/themes"); fs.mkdirSync(output,{recursive:true});
 const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({ executablePath:path.resolve(root,"../research/labs/grokbot-desktop/node_modules/.bin/electron"),args:[path.join(root,"scripts/design-qa-main.cjs")],env });
 const report = { source:"Disposable real-ledger copy, actual renderer. No executor.",checks:[],errors:[] };
 try {
   const page = await app.firstWindow(); page.on("pageerror",error=>report.errors.push(error.message));
   const nav = page.getByRole("navigation",{name:"主导航"});
+  await page.emulateMedia({colorScheme:"light"});
+  await page.getByRole("button",{name:"设置",exact:true}).click();
+  await page.getByRole("radio",{name:"跟随系统",exact:true}).check();
+  await page.waitForFunction(()=>document.documentElement.dataset.appearance==="light");
+  await nav.getByRole("button",{name:"工作",exact:true}).click();
+  await page.emulateMedia({colorScheme:"dark"});
+  await page.waitForFunction(()=>document.documentElement.dataset.appearance==="dark");
+  await page.getByRole("button",{name:"设置",exact:true}).click();
+  await page.getByRole("radio",{name:"浅色",exact:true}).check();
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.appearance),"light","explicit appearance overrides OS");
   for (const [w,h] of [[1540,960],[1120,720]]) {
     await app.evaluate(({ BrowserWindow },size)=>BrowserWindow.getAllWindows()[0].setContentSize(...size),[w,h]);
+    for (const [mode,label] of [["light","浅色"],["dark","深色"]]) {
+    await page.getByRole("button",{name:"设置",exact:true}).click();
+    await page.getByRole("radio",{name:label,exact:true}).check();
     const semantic = await page.evaluate(()=>["--green","--amber","--red"].map(key=>getComputedStyle(document.documentElement).getPropertyValue(key)));
     for (const theme of THEMES) {
       await page.getByRole("button",{name:"设置",exact:true}).click();
@@ -39,14 +52,19 @@ try {
     assert.equal(await page.evaluate(()=>document.documentElement.dataset.accentTheme),"iris","theme survives reload");
     await page.locator(".primary-next").click();
     await page.locator(".graph-viewport").waitFor();
-    assert.equal(await page.locator(".product-symbol").evaluate(e=>getComputedStyle(e).color),rgb(THEMES[1].accent));
+    assert.equal(await page.evaluate(()=>document.documentElement.dataset.appearance),mode,"appearance survives reload");
+    assert.equal(await page.locator(".product-symbol").evaluate(e=>getComputedStyle(e).color),rgb(mode==="light"?THEMES[1].light:THEMES[1].accent));
     await capture(`execution-iris-${w}`);
     const control = page.locator(".graph-toolbar .select-control").first();
     await control.click(); await page.locator(".select-menu").waitFor();
     const menu = await page.locator(".select-menu").boundingBox();
     assert.ok(menu.x>=0 && menu.x+menu.width<=w && menu.y>=0 && menu.y+menu.height<=h,"custom menu remains within window");
-    assert.equal(await page.locator('.select-menu button[aria-selected="true"]').evaluate(e=>getComputedStyle(e).color),rgb(THEMES[1].accent));
-    await capture(`menu-iris-${w}`); await control.press("Escape");
+    assert.equal(await page.locator('.select-menu button[aria-selected="true"]').evaluate(e=>getComputedStyle(e).color),rgb(mode==="light"?THEMES[1].light:THEMES[1].accent));
+    await capture(`menu-iris-${w}`); await control.press("Tab");
+    assert.equal(await page.locator(".select-menu").count(),0,"Tab closes the menu without blocking focus");
+    await control.click(); await control.press("End"); await control.press("Enter");
+    assert.equal(await page.locator(".select-menu").count(),0,"keyboard selection commits and closes");
+    await control.click(); await control.press("Escape");
     await nav.getByRole("button",{name:/待我处理/}).click();
     await page.getByRole("button",{name:"逐项处理",exact:true}).click();
     assert.equal(await page.locator(".focus-open").evaluate(e=>getComputedStyle(e).backgroundColor),rgb(THEMES[1].solid));
@@ -55,10 +73,17 @@ try {
     await nav.getByRole("button",{name:"成果",exact:true}).click();
     await page.locator(".library-file-row").first().waitFor();
     await capture(`results-iris-${w}`);
+    await nav.getByRole("button",{name:"工作",exact:true}).click();
+    await page.locator(".new-requirement").click();
+    await page.locator(".requirement-composer").waitFor();
+    await capture(`composer-iris-${w}`);
+    await page.locator(".requirement-composer").getByRole("button",{name:"关闭",exact:true}).click();
+    }
   }
   assert.deepEqual(report.errors,[]);
   assert.ok(report.checks.every(item=>!item.failures.length));
   async function capture(name) {
+    name=(await page.evaluate(()=>document.documentElement.dataset.appearance))+"-"+name;
     await page.screenshot({path:path.join(output,name+".png")});
     report.checks.push(await page.evaluate(name=>{
       const failures=[];

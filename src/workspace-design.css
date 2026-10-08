@@ -1,125 +1,125 @@
 /* Mission composition. Scoped above legacy component skins.
    Decision, controls and viewport are separate flow regions: never fixed offsets. */
-.app-shell .mission-workspace { grid-template-rows: 60px minmax(0,1fr) 28px; background: #101316; }
-.app-shell .mission-toolbar { padding: 0 18px; gap: 12px; background: #171a1f; border-color: #ffffff0e; }
+.app-shell .mission-workspace { grid-template-rows: 60px minmax(0,1fr) 28px; background: var(--surface-base); }
+.app-shell .mission-toolbar { padding: 0 18px; gap: 12px; background: var(--surface-base); border-color: var(--border); }
 .app-shell .mission-title { flex: 1 1 0; max-width: none; min-width: 0; }
 .app-shell .mission-title > div { min-width: 0; }
-.app-shell .mission-title span { font-size: 10px; color: #7f8895; letter-spacing: .045em; }
+.app-shell .mission-title span { font-size: 10px; color: var(--text-secondary); letter-spacing: .045em; }
 .app-shell .mission-title strong { max-width: none; font-size: 12px; font-weight: 550; }
-.app-shell .live-badge { flex-shrink: 0; white-space: nowrap; border: 0; background: #ffffff06; padding: 6px 8px; border-radius: 5px; font-size: 10px; }
-.app-shell .mission-stop { flex-shrink: 0; border: 0; padding: 5px; background: transparent; color: #a58989; white-space: nowrap; font-size: 11px; }
-.app-shell .mission-tabs { flex-shrink: 0; gap: 3px; padding: 3px; border: 1px solid #ffffff09; border-radius: 7px; background: #0e1115; box-shadow: none; }
-.app-shell .mission-tabs button { display: flex; gap: 6px; min-width: 0; height: 30px; padding: 0 10px; font-size: 11px; font-weight: 500; color: #8d97a5; }
-.app-shell .mission-tabs button.active { color: #e0e5ec; background: #2a3039; box-shadow: none; border-radius: 5px; }
+.app-shell .live-badge { flex-shrink: 0; white-space: nowrap; border: 0; background: var(--overlay-soft); padding: 6px 8px; border-radius: 5px; font-size: 10px; }
+.app-shell .mission-stop { flex-shrink: 0; border: 0; padding: 5px; background: transparent; color: var(--text-secondary); white-space: nowrap; font-size: 11px; }
+.app-shell .mission-tabs { flex-shrink: 0; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-input); box-shadow: none; }
+.app-shell .mission-tabs button { display: flex; gap: 6px; min-width: 0; height: 30px; padding: 0 10px; font-size: 11px; font-weight: 500; color: var(--text-secondary); }
+.app-shell .mission-tabs button.active { color: var(--text-primary); background: var(--surface-raised); box-shadow: none; border-radius: 5px; }
 .app-shell .mission-tabs button svg { display: block; }
-.app-shell .mission-tabs select { width: 69px; height: 30px; padding: 0 8px; border: 0; border-radius: 5px; color: #929ca9; background: transparent; font: 11px var(--font-ui); }
-.app-shell .mission-tabs select:has(option:checked:not([value=""])) { color: #dce5f3; background: #273345; }
+.app-shell .mission-tabs select { width: 69px; height: 30px; padding: 0 8px; border: 0; border-radius: 5px; color: var(--text-secondary); background: transparent; font: 11px var(--font-ui); }
+.app-shell .mission-tabs select:has(option:checked:not([value=""])) { color: var(--text-primary); background: color-mix(in srgb,var(--accent) 9%,var(--surface-base)); }
 .app-shell .mission-body { grid-template-columns: minmax(0,1fr) 4px clamp(330px,var(--inspector-width,390px),43%); }
 .app-shell .mission-body.inspector-focused { grid-template-columns: minmax(210px,.6fr) 4px minmax(0,1fr); }
-.app-shell .graph-canvas { display: flex; flex-direction: column; background: #101418; container-type: inline-size; }
+.app-shell .graph-canvas { display: flex; flex-direction: column; background: var(--surface-base); container-type: inline-size; }
 .app-shell .graph-canvas::after { display: none; }
 .app-shell .mission-decision-dock {
   position: relative; inset: auto; z-index: 1; flex: none; display: grid;
   grid-template-columns: 20px minmax(0,1fr); gap: 8px 12px; margin: 14px 16px 0;
-  padding: 14px 16px; border: 1px solid #ffffff13; border-radius: 9px;
-  background: #1c222b; color: #a0b9df; box-shadow: none; backdrop-filter: none;
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface-sidebar); color: var(--text-primary); box-shadow: none; backdrop-filter: none;
 }
 .app-shell .mission-decision-dock > svg { grid-row: 1; align-self: start; margin-top: 3px; width: 18px; }
-.app-shell .mission-decision-dock:not(.review) { background: #25231f; color: #d6b782; }
-.app-shell .mission-decision-copy .eyebrow { font-size: 10px; letter-spacing: .015em; color: #8995a5; opacity: 1; }
-.app-shell .mission-decision-copy strong { margin-top: 5px; font-size: 13px; font-weight: 600; line-height: 1.55; color: #e1e6ed; }
-.app-shell .mission-decision-copy p { display: block; white-space: normal; margin: 5px 0 0; color: #929eae; font-size: 11px; line-height: 1.6; }
+.app-shell .mission-decision-dock:not(.review) { background: var(--surface-sidebar); color: var(--amber); }
+.app-shell .mission-decision-copy .eyebrow { font-size: 10px; letter-spacing: .015em; color: var(--text-secondary); opacity: 1; }
+.app-shell .mission-decision-copy strong { margin-top: 5px; font-size: 13px; font-weight: 600; line-height: 1.55; color: var(--text-primary); }
+.app-shell .mission-decision-copy p { display: block; white-space: normal; margin: 5px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
 .app-shell .mission-decision-actions { grid-column: 2; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 3px; }
-.app-shell .mission-decision-actions button { display: inline-flex; align-items: center; justify-content: center; height: 30px; padding: 0 10px; border: 1px solid #ffffff18; border-radius: 6px; color: #c8d0dd; background: transparent; box-shadow: none; font: 500 11px var(--font-ui); }
-.app-shell .mission-decision-actions .primary-button { border-color: #497cca; background: #376bb8; color: #fff; }
-.app-shell .mission-decision-actions .decision-start { color: #ddf1e5; border-color: #47765a; background: #30503c; }
+.app-shell .mission-decision-actions button { display: inline-flex; align-items: center; justify-content: center; height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: transparent; box-shadow: none; font: 500 11px var(--font-ui); }
+.app-shell .mission-decision-actions .primary-button { border-color: var(--accent); background: var(--accent-solid); color: var(--accent-on); }
+.app-shell .mission-decision-actions .decision-start { color: var(--text-primary); border-color: var(--green); background: color-mix(in srgb,var(--green) 9%,var(--surface-base)); }
 .app-shell .graph-toolbar {
   position: relative; inset: auto; z-index: 1; flex: none; display: flex; flex-wrap: wrap;
   max-width: none; gap: 14px; min-height: 48px; margin: 0; padding: 10px 18px;
-  background: transparent; border: 0; border-bottom: 1px solid #ffffff09; border-radius: 0;
+  background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
   box-shadow: none; backdrop-filter: none; overflow: visible;
 }
-.app-shell .graph-toolbar label { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; font: 500 11px var(--font-ui); color: #778391; letter-spacing: 0; }
-.app-shell .graph-toolbar label select { max-width: 110px; height: 27px; font: 11px var(--font-ui); color: #c0c8d4; border: 1px solid #ffffff0c; background: #1b2027; padding: 0 7px; border-radius: 5px; }
+.app-shell .graph-toolbar label { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; font: 500 11px var(--font-ui); color: var(--text-secondary); letter-spacing: 0; }
+.app-shell .graph-toolbar label select { max-width: 110px; height: 27px; font: 11px var(--font-ui); color: var(--text-primary); border: 1px solid var(--border); background: var(--surface-sidebar); padding: 0 7px; border-radius: 5px; }
 .app-shell .graph-toolbar button { height: 27px; font-size: 11px; border-radius: 5px; box-shadow: none; }
-.app-shell .graph-toolbar .critical-path-toggle { margin: 0; border: 1px solid #ffffff0d; background: #1b2027; }
-.app-shell .graph-toolbar .critical-path-toggle.active { color: #c6b9e8; background: #2b253a; border-color: #544369; }
+.app-shell .graph-toolbar .critical-path-toggle { margin: 0; border: 1px solid var(--border); background: var(--surface-sidebar); }
+.app-shell .graph-toolbar .critical-path-toggle.active { color: var(--text-primary); background: var(--surface-raised); border-color: var(--violet); }
 .app-shell .graph-viewport { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .app-shell .graph-viewport > .react-flow { height: 100%; width: 100%; }
-.app-shell .graph-impact-card { top: 10px; left: 14px; width: auto; max-width: calc(100% - 28px); padding: 7px 10px; border: 1px solid #ffffff10; border-radius: 6px; background: #171d24ed; box-shadow: none; pointer-events: none; }
+.app-shell .graph-impact-card { top: 10px; left: 14px; width: auto; max-width: calc(100% - 28px); padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-sidebar); box-shadow: none; pointer-events: none; }
 .app-shell .graph-impact-card > .eyebrow, .app-shell .graph-impact-card > strong, .app-shell .graph-impact-card > small { display: none; }
 .app-shell .graph-impact-card > div { margin: 0; gap: 12px; }
 .app-shell .graph-impact-card > div span { font-size: 10px; }
 .app-shell .agent-node {
   width: 212px; height: 88px; min-height: 88px; box-sizing: border-box;
   grid-template-columns: 32px minmax(0,1fr); grid-template-rows: 1fr auto; gap: 2px 10px;
-  padding: 12px; background: #1a2027; border: 1px solid #3d4955; border-radius: 9px;
-  box-shadow: 0 3px 8px #0002; color: #dce3ec;
+  padding: 12px; background: var(--surface-sidebar); border: 1px solid var(--border-strong); border-radius: 9px;
+  box-shadow: 0 3px 8px #0002; color: var(--text-primary);
 }
 .app-shell .agent-node > .agent-identity-avatar { grid-row: 1 / 3; align-self: center; width: 32px; height: 32px; }
 .app-shell .agent-node-copy { grid-column: 2; align-self: center; }
 .app-shell .agent-node-copy strong { font-size: 12px; font-weight: 550; line-height: 1.4; }
-.app-shell .agent-node-copy span { margin: 3px 0 0; color: #8290a2; font-size: 10px; line-height: 1.3; }
+.app-shell .agent-node-copy span { margin: 3px 0 0; color: var(--text-secondary); font-size: 10px; line-height: 1.3; }
 .app-shell .agent-node-copy small { display: none; }
 .app-shell .agent-node-state { grid-column: 2; justify-self: start; font-size: 10px; line-height: 1.3; }
-.app-shell .agent-node.selected { border-color: #86a9e1; background: #202b3b; box-shadow: 0 0 0 2px #83a7df20; }
-.app-shell .agent-node.completed { background: #19231f; border-color: #385546; }
+.app-shell .agent-node.selected { border-color: var(--accent); background: color-mix(in srgb,var(--accent) 9%,var(--surface-base)); box-shadow: 0 0 0 2px #83a7df20; }
+.app-shell .agent-node.completed { background: var(--surface-sidebar); border-color: var(--green); }
 .app-shell .agent-node.critical { box-shadow: 0 0 0 1px #9a84c833; }
-.app-shell .mission-sidebar { background: #171b20; border-color: #ffffff0e; }
+.app-shell .mission-sidebar { background: var(--surface-sidebar); border-color: var(--border); }
 .app-shell .mission-sidebar > header { padding: 22px 18px 18px; }
-.app-shell .mission-sidebar > header .eyebrow { font-size: 10px; color: #778391; letter-spacing: .04em; }
+.app-shell .mission-sidebar > header .eyebrow { font-size: 10px; color: var(--text-secondary); letter-spacing: .04em; }
 .app-shell .mission-sidebar h1 { margin-top: 7px; font-size: 18px; font-weight: 600; }
-.app-shell .mission-search, .app-shell .mission-picker { background: #101419; border-color: #ffffff12; border-radius: 6px; }
-.app-shell .mission-summary { background: none; border: 0; border-top: 1px solid #ffffff0c; border-bottom: 1px solid #ffffff0c; border-radius: 0; box-shadow: none; padding: 15px 4px; margin: 4px 14px 10px; }
+.app-shell .mission-search, .app-shell .mission-picker { background: var(--surface-base); border-color: var(--border); border-radius: 6px; }
+.app-shell .mission-summary { background: none; border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; padding: 15px 4px; margin: 4px 14px 10px; }
 .app-shell .mission-summary small { font-size: 10px; margin-top: 7px; }
 .app-shell .task-groups { padding: 0 10px 14px; }
 .app-shell .task-groups h3 { padding: 12px 7px 9px; font-size: 10px; letter-spacing: .025em; font-weight: 550; }
 .app-shell .task-row { padding: 12px; margin-bottom: 5px; background: transparent; border: 1px solid transparent; border-radius: 8px; box-shadow: none; }
-.app-shell .task-row:hover { transform: none; background: #ffffff05; }
-.app-shell .task-row.selected { background: #293343; border-color: #ffffff0e; box-shadow: none; }
-.app-shell .task-row.attention:not(.selected) { background: #c9983708; }
+.app-shell .task-row:hover { transform: none; background: var(--overlay-soft); }
+.app-shell .task-row.selected { background: color-mix(in srgb,var(--accent) 9%,var(--surface-base)); border-color: var(--border); box-shadow: none; }
+.app-shell .task-row.attention:not(.selected) { background: color-mix(in srgb,var(--amber) 3%,transparent); }
 .app-shell .task-row-top { gap: 10px; }
-.app-shell .task-row-top code { display: block; min-width: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px var(--font-mono); color: #818fa2; }
+.app-shell .task-row-top code { display: block; min-width: 0; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px var(--font-mono); color: var(--text-secondary); }
 .app-shell .task-row-top span { flex-shrink: 0; font-size: 10px; font-weight: 500; }
 .app-shell .task-row-identity { grid-template-columns: 26px minmax(0,1fr); gap: 9px; margin: 9px 0 0; }
 .app-shell .task-row-identity .agent-identity-avatar { width: 26px; height: 26px; }
 .app-shell .task-row-identity strong { font-size: 12px; font-weight: 500; line-height: 1.5; }
-.app-shell .task-row-identity span { font-size: 11px; color: #8792a3; }
+.app-shell .task-row-identity span { font-size: 11px; color: var(--text-secondary); }
 .app-shell .task-row-meta { display: none; }
-.app-shell .mission-inspector { background: #171b20; }
+.app-shell .mission-inspector { background: var(--surface-sidebar); }
 .app-shell .mission-inspector > header { padding: 19px 18px 17px; }
 .app-shell .mission-inspector > header > .eyebrow { display: none; }
 .app-shell .agent-heading { gap: 10px; }
 .app-shell .agent-heading .agent-identity-avatar { width: 36px; height: 36px; }
 .app-shell .agent-heading h2 { font-size: 15px; font-weight: 600; }
-.app-shell .agent-heading p { font-size: 11px; line-height: 1.6; margin-top: 3px; color: #8290a2; }
+.app-shell .agent-heading p { font-size: 11px; line-height: 1.6; margin-top: 3px; color: var(--text-secondary); }
 .app-shell .agent-heading-actions { gap: 6px; }
 .app-shell .agent-heading-actions .online { border: 0; background: none; padding: 4px; white-space: nowrap; font-size: 10px; }
-.app-shell .mission-inspector > nav { gap: 0; padding: 0 10px; background: transparent; border-color: #ffffff10; }
+.app-shell .mission-inspector > nav { gap: 0; padding: 0 10px; background: transparent; border-color: var(--border); }
 .app-shell .mission-inspector > nav button { min-height: 40px; font-size: 11px; padding: 0 4px; gap: 4px; }
 .app-shell .mission-inspector > nav button > svg { display: none; }
 .app-shell .mission-inspector > nav button > span { position: static; width: auto; height: auto; clip-path: none; overflow: visible; }
-.app-shell .mission-inspector > nav button b { min-width: 15px; height: 15px; font-size: 9px; background: #293445; color: #9fbbdf; }
-.app-shell .agent-result-view > header { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 10px; padding: 24px 20px; background: transparent; border-color: #ffffff0d; }
-.app-shell .agent-result-view > header .eyebrow { color: #8491a2; font-size: 11px; letter-spacing: .025em; }
+.app-shell .mission-inspector > nav button b { min-width: 15px; height: 15px; font-size: 9px; background: color-mix(in srgb,var(--accent) 9%,var(--surface-base)); color: var(--text-primary); }
+.app-shell .agent-result-view > header { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 10px; padding: 24px 20px; background: transparent; border-color: var(--border); }
+.app-shell .agent-result-view > header .eyebrow { color: var(--text-secondary); font-size: 11px; letter-spacing: .025em; }
 .app-shell .agent-result-view > header h3 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.65; overflow-wrap: anywhere; }
-.app-shell .agent-result-view > header p { margin: 0; color: #aab4c2; font-size: 12px; line-height: 1.85; }
+.app-shell .agent-result-view > header p { margin: 0; color: var(--text-primary); font-size: 12px; line-height: 1.85; }
 .app-shell .agent-result-view > section { padding: 20px; }
-.app-shell .agent-result-view h4 { margin: 0 0 14px; color: #a3afbf; font-size: 12px; font-weight: 550; }
+.app-shell .agent-result-view h4 { margin: 0 0 14px; color: var(--text-primary); font-size: 12px; font-weight: 550; }
 .app-shell .result-task-list { display: flex; flex-direction: column; gap: 0; }
-.app-shell .result-task-list article { display: grid; grid-template-columns: 26px minmax(0,1fr); gap: 5px 10px; padding: 14px 0; border: 0; border-bottom: 1px solid #ffffff0b; border-radius: 0; background: transparent; }
+.app-shell .result-task-list article { display: grid; grid-template-columns: 26px minmax(0,1fr); gap: 5px 10px; padding: 14px 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; }
 .app-shell .result-task-list article > .agent-identity-avatar { grid-column: 1; grid-row: 1 / 3; margin-top: 3px; }
-.app-shell .result-task-list article > code { grid-column: 2; grid-row: 2; color: #728196; font-size: 9px; white-space: normal; overflow-wrap: anywhere; }
+.app-shell .result-task-list article > code { grid-column: 2; grid-row: 2; color: var(--text-secondary); font-size: 9px; white-space: normal; overflow-wrap: anywhere; }
 .app-shell .result-task-list article > div:not(.agent-identity-avatar) { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.app-shell .result-task-list strong { color: #d4dce7; font-size: 12px; font-weight: 500; line-height: 1.65; }
-.app-shell .result-task-list span { display: block; color: #8a96a7; font-size: 11px; line-height: 1.5; }
-.app-shell .agent-result-view > .result-action { display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 40px); margin: 0 20px 24px; min-height: 35px; border: 1px solid #45638b; border-radius: 7px; background: #273b57; color: #c9dcf9; font-size: 12px; box-shadow: none; }
-.app-shell .agent-compose { padding: 12px 14px; background: #171b20; border-color: #ffffff10; }
-.app-shell .agent-compose header { font-size: 11px; color: #9eacbe; }
-.app-shell .agent-compose textarea { background: #10151c; border-color: #ffffff16; border-radius: 7px; font-size: 12px; line-height: 1.7; }
-.app-shell .mission-status { background: #13171c; border-color: #ffffff0c; font-size: 10px; }
-.app-shell .mission-workspace button:focus-visible, .app-shell .mission-sidebar button:focus-visible { outline: 2px solid #7fa6e8; outline-offset: 2px; }
-.app-shell .graph-viewport .react-flow__controls { display: flex; flex-direction: row; margin: 14px; background: #1b2027; }
+.app-shell .result-task-list strong { color: var(--text-primary); font-size: 12px; font-weight: 500; line-height: 1.65; }
+.app-shell .result-task-list span { display: block; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.app-shell .agent-result-view > .result-action { display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 40px); margin: 0 20px 24px; min-height: 35px; border: 1px solid var(--accent); border-radius: 7px; background: color-mix(in srgb,var(--accent) 9%,var(--surface-base)); color: var(--text-primary); font-size: 12px; box-shadow: none; }
+.app-shell .agent-compose { padding: 12px 14px; background: var(--surface-sidebar); border-color: var(--border); }
+.app-shell .agent-compose header { font-size: 11px; color: var(--text-primary); }
+.app-shell .agent-compose textarea { background: var(--surface-base); border-color: var(--border); border-radius: 7px; font-size: 12px; line-height: 1.7; }
+.app-shell .mission-status { background: var(--surface-base); border-color: var(--border); font-size: 10px; }
+.app-shell .mission-workspace button:focus-visible, .app-shell .mission-sidebar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app-shell .graph-viewport .react-flow__controls { display: flex; flex-direction: row; margin: 14px; background: var(--surface-sidebar); }
 .app-shell .graph-viewport .react-flow__edge-textwrapper { opacity: 0; transition: opacity .15s; }
 .app-shell .graph-viewport .react-flow__edge:is(:hover,.label-visible,.selected) .react-flow__edge-textwrapper { opacity: 1; }
 @container (min-width: 680px) {
@@ -140,8 +140,8 @@
   .app-shell .mission-status > span:nth-child(3) { display: none; }
 }
 @media(prefers-reduced-transparency:reduce) {
-  .app-shell .mission-sidebar, .app-shell .mission-inspector { backdrop-filter: none; background: #171b20; }
+  .app-shell .mission-sidebar, .app-shell .mission-inspector { backdrop-filter: none; background: var(--surface-sidebar); }
 }
-.source-receipts details { margin-top:10px; border-top:1px solid #ffffff10; padding-top:10px; }
-.source-receipts summary { color:#c7d4e4; font-size:12px; line-height:1.5; overflow-wrap:anywhere; cursor:pointer; }
+.source-receipts details { margin-top:10px; border-top:1px solid var(--border); padding-top:10px; }
+.source-receipts summary { color:var(--text-primary); font-size:12px; line-height:1.5; overflow-wrap:anywhere; cursor:pointer; }
 .source-receipts code { white-space:normal; overflow-wrap:anywhere; }

@@ -24,7 +24,8 @@ if (process.env.AGENT_DECK_WORKSPACE_QA) {
   workspaceQaCandidate = candidate;
   store.updateMission(candidate.id, { executionMode: "auto", status: "ready", activeTurnId: null, error: null, spec: { ...candidate.spec, workspace: { strategy: "initialize_git", reason: "布局测试场景（不是模型输出）：工作区准备说明与逐项文件清单应保持清晰可读；原计划和账本来自只读副本。", trackedFiles: Array.from({ length: 20 }, (_, index) => `src/long-folder-name/component-${index}/representative-file-for-layout.js`) } } });
 }
-const artifacts = new ArtifactService({ store });
+const publishQa = process.env.AGENT_DECK_PUBLISH_QA ? (globalThis.publishQa = { failConversion: false, clipboard: [], publish: [] }) : null;
+const artifacts = new ArtifactService({ store, clipboard: publishQa ? { writeText: text => publishQa.clipboard.push(text) } : undefined });
 const library = new LibraryService({ store, artifacts });
 // Exercise the actual approve controller against the disposable real ledger.
 // Transport is deliberately a no-inference stub; no real worker is dispatched.
@@ -129,6 +130,11 @@ const reads = {
   "library:browse": input => library.browse(input),
   "library:preview": input => library.preview(input),
   "artifacts:inspect": input => artifacts.inspect(input),
+  ...(publishQa ? {
+    "artifacts:publication": input => { if (publishQa.failConversion) throw new Error("QA fixture：转换失败（未调用网络）"); return artifacts.publication(input); },
+    "artifacts:copy-publication": input => artifacts.copyPublication(input),
+    "publisher:publish": input => { publishQa.publish.push(input); return { ok: true, state: "needs_login_or_editor" }; },
+  } : {}),
   "codex:read-thread": () => { throw new Error("只读验收：不连接真实会话；请查看已持久化的结果与产物。"); },
 };
 for (const [channel, read] of Object.entries(reads)) ipcMain.handle(channel, (_, input) => read(input));

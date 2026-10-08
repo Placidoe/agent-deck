@@ -1,21 +1,21 @@
-.runtime-mode-settings { padding:28px 32px 0; color:var(--text-primary,#dfe4e8); }
+.runtime-mode-settings { padding:28px 32px 0; color:var(--text-primary,var(--text-primary)); }
 .runtime-mode-settings h2 { margin:8px 0; font-size:22px; font-weight:600; letter-spacing:-.4px; }
-.runtime-mode-settings header p,.runtime-mode-backend p { color:var(--text-secondary,#929ba5); font-size:13px; line-height:1.6; }
+.runtime-mode-settings header p,.runtime-mode-backend p { color:var(--text-secondary,var(--text-secondary)); font-size:13px; line-height:1.6; }
 .runtime-mode-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:20px 0; }
-.runtime-mode-options button { min-width:0; padding:20px; text-align:left; border:1px solid #363c44; border-radius:12px; background:#1b2026; color:inherit; cursor:pointer; }
-.runtime-mode-options button[aria-pressed=true] { border-color:#668bbb; background:#233043; box-shadow:inset 0 0 0 1px #668bbb; }
-.runtime-mode-options button span { color:#99a8ba; font-size:11px; }
+.runtime-mode-options button { min-width:0; padding:20px; text-align:left; border:1px solid var(--border-strong); border-radius:12px; background:var(--surface-sidebar); color:inherit; cursor:pointer; }
+.runtime-mode-options button[aria-pressed=true] { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 9%,var(--surface-base)); box-shadow:inset 0 0 0 1px #668bbb; }
+.runtime-mode-options button span { color:var(--text-primary); font-size:11px; }
 .runtime-mode-options button strong { display:block; margin:8px 0; font-size:16px; font-weight:600; }
-.runtime-mode-options button p { margin:0; font-size:13px; line-height:1.7; color:#acb4bf; }
+.runtime-mode-options button p { margin:0; font-size:13px; line-height:1.7; color:var(--text-primary); }
 .runtime-mode-options button:disabled { cursor:default; opacity:.6; }
-.runtime-mode-options button:focus-visible,.runtime-mode-backend select:focus-visible { outline:2px solid #91b9ed; outline-offset:3px; }
+.runtime-mode-options button:focus-visible,.runtime-mode-backend select:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
 .runtime-mode-backend { display:grid; grid-template-columns:100px minmax(0,280px); gap:8px 16px; align-items:center; }
 .runtime-mode-backend label { font-size:13px; }
-.runtime-mode-backend select { min-width:0; padding:10px; color:inherit; background:#191e24; border:1px solid #363c44; border-radius:8px; }
+.runtime-mode-backend select { min-width:0; padding:10px; color:inherit; background:var(--surface-sidebar); border:1px solid var(--border-strong); border-radius:8px; }
 .runtime-mode-backend p { grid-column:1/-1; margin:4px 0; }
-.runtime-mode-error { color:#f0a89e; }
+.runtime-mode-error { color:var(--red); }
 @media(max-width:760px) { .runtime-mode-options { grid-template-columns:minmax(0,1fr); } .runtime-mode-settings { padding:20px; } }
-.runtime-supervision { border-top: 1px solid var(--border, #30343a); margin-top: 24px; padding-top: 20px; }
+.runtime-supervision { border-top: 1px solid var(--border, var(--border-strong)); margin-top: 24px; padding-top: 20px; }
 .runtime-supervision h3 { font-size: 14px; margin: 0 0 8px; }
-.runtime-supervision > p { color: var(--text-muted, #a1a8b0); font-size: 12px; line-height: 1.65; }
-.runtime-autonomy-warning { padding: 12px 14px; border-radius: 8px; background: rgba(214,165,69,.08); }
+.runtime-supervision > p { color: var(--text-muted, var(--text-secondary)); font-size: 12px; line-height: 1.65; }
+.runtime-autonomy-warning { padding: 12px 14px; border-radius: 8px; background: color-mix(in srgb,var(--amber) 8%,transparent); }

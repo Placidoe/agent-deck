@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { THEMES, THEME_KEY, readTheme, resolveTheme, applyTheme, saveTheme } from "../src/appearance.js";
+import { THEMES, THEME_KEY, APPEARANCE_KEY, readTheme, resolveTheme, applyTheme, saveTheme, readAppearance, saveAppearance, applyAppearance, initializeAppearance } from "../src/appearance.js";
 import { avatarTone } from "../src/agent-identity.js";
 
 function luminance(hex) {
@@ -14,7 +14,35 @@ test("every accent has readable normal/hover primary buttons and highlighted tex
     assert.ok(contrast(t.solid,"#ffffff") >= 4.5, `${t.id} button contrast`);
     assert.ok(contrast(t.hover,"#ffffff") >= 4.5, `${t.id} hover contrast`);
     assert.ok(contrast(t.accent,"#20252d") >= 4.5, `${t.id} text contrast`);
+    assert.ok(contrast(t.light,"#ffffff") >= 4.5, `${t.id} light text contrast`);
   }
+});
+test("appearance is separate from accent, explicit modes override OS, and storage is defensive", () => {
+  const map=new Map(); const storage={getItem:key=>map.get(key),setItem:(key,value)=>map.set(key,value)};
+  const values=new Map(); const root={dataset:{accentTheme:"iris",runtimeMode:"external"},style:{setProperty:(key,value)=>values.set(key,value)}};
+  assert.equal(readAppearance(storage),"system");
+  assert.equal(saveAppearance("light",storage),true); assert.equal(map.get(APPEARANCE_KEY),"light");
+  applyAppearance(readAppearance(storage),root,true);
+  assert.equal(root.dataset.appearance,"light"); assert.equal(values.get("--accent"),THEMES[1].light);
+  applyAppearance("dark",root,false); assert.equal(root.dataset.appearance,"dark");
+  applyAppearance("system",root,false); assert.equal(root.dataset.appearance,"light");
+  applyAppearance("system",root,true); assert.equal(root.dataset.appearance,"dark");
+  assert.equal(root.dataset.runtimeMode,"external"); assert.equal(root.dataset.accentTheme,"iris");
+  assert.equal(saveAppearance("dark",null),false);
+  assert.equal(readAppearance({getItem:()=>{throw Error("blocked");}}),"system");
+  assert.equal(saveAppearance("light",{setItem:()=>{throw Error("full");}}),false);
+});
+test("system and cross-window updates work without mounted settings and listeners dispose", () => {
+  const media=new EventTarget(); media.matches=false;
+  const events=new EventTarget(); const map=new Map([[THEME_KEY,"teal"]]);
+  const root={dataset:{},style:{setProperty(){}}};
+  const dispose=initializeAppearance({root,storage:{getItem:key=>map.get(key)},media,events});
+  assert.equal(root.dataset.appearance,"light"); assert.equal(root.dataset.accentTheme,"teal");
+  media.matches=true; media.dispatchEvent(new Event("change")); assert.equal(root.dataset.appearance,"dark");
+  applyAppearance("light",root,true); media.dispatchEvent(new Event("change")); assert.equal(root.dataset.appearance,"light");
+  map.set(APPEARANCE_KEY,"dark"); const changed=new Event("storage"); changed.key=APPEARANCE_KEY;
+  events.dispatchEvent(changed); assert.equal(root.dataset.appearance,"dark");
+  dispose(); map.set(APPEARANCE_KEY,"light"); events.dispatchEvent(changed); assert.equal(root.dataset.appearance,"dark");
 });
 test("saved theme round-trips and unknown/blocked storage falls back safely", () => {
   const map = new Map(); const storage = { getItem: key => map.get(key), setItem: (key,value) => map.set(key,value) };

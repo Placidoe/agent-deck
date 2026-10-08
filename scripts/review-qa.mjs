@@ -4,13 +4,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
+import { qaAppearance } from "./ui-qa-appearance.mjs";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const output = path.join(root, "qa/review"); fs.mkdirSync(output, { recursive: true });
+const output = path.join(root, "qa/review", process.env.AGENT_DECK_QA_APPEARANCE || "system"); fs.mkdirSync(output, { recursive: true });
 const env = { ...process.env, AGENT_DECK_REVIEW_QA: "1" }; delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({ executablePath: path.resolve(root, "../research/labs/grokbot-desktop/node_modules/.bin/electron"), args: [path.join(root, "scripts/design-qa-main.cjs")], env });
 const report = { source: "Disposable ledger; labelled review fixtures; real renderer/IPC/controller; no model-quality claims", checks: [], errors: [] };
 try {
   const page = await app.firstWindow(); page.on("pageerror", error => report.errors.push(error.message));
+  await qaAppearance(page);
   await page.locator(".requirement-detail .primary-next").waitFor();
   await page.locator(".primary-next").click();
   await page.locator(".mission-body").waitFor();
