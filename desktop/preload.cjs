@@ -2,6 +2,11 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("agentDeckDesktop", {
   isDesktop: true,
+  waiting: {
+    read: () => ipcRenderer.invoke("waiting:read"),
+    start: input => ipcRenderer.invoke("waiting:start", input),
+    finish: id => ipcRenderer.invoke("waiting:finish", id),
+  },
   personal: {
     projects: () => ipcRenderer.invoke("personal:projects"),
     saveProject: input => ipcRenderer.invoke("personal:save-project", input),

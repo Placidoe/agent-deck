@@ -666,6 +666,24 @@ class MissionStore {
     })).filter((entry) => entry.mission && entry.threadId && entry.turnId);
   }
 
+  waitingWork(ids = null) {
+    // Narrow projection: no prompts, transcripts, specs, event history or file reads.
+    const where = ids ? (ids.length ? `m.id IN (${ids.slice(0, 20).map(quote).join(",")})` : "0") : `m.status IN ('planning','running','integrating')`;
+    const rows = this.#all(`SELECT m.id,m.title,m.status,
+      (SELECT COUNT(*) FROM tasks t WHERE t.mission_id=m.id AND t.status='completed') AS completed,
+      (SELECT COUNT(*) FROM artifacts a WHERE a.mission_id=m.id) AS artifacts
+      FROM missions m WHERE ${where} ORDER BY m.updated_at DESC LIMIT 20;`);
+    const criticalTasks = rows.length ? this.#all(`SELECT mission_id,id,status FROM tasks WHERE mission_id IN (${rows.map(row => quote(row.id)).join(",")}) AND status IN ('blocked','waiting_approval');`) : [];
+    return rows.map(row => ({
+      id: row.id, title: String(row.title).slice(0, 180), status: row.status,
+      completed: Number(row.completed || 0), artifacts: Number(row.artifacts || 0),
+      critical: row.status === 'canceled' || row.status === 'completed' ? [] : [
+        ...(['blocked','failed','integration_conflict'].includes(row.status) ? [`mission:${row.status}`] : []),
+        ...criticalTasks.filter(task => task.mission_id === row.id).slice(0, 20).map(task => `${task.id}:${task.status}`),
+      ],
+    }));
+  }
+
   listMissions(options = {}) {
     if (options.detailed) {
       return this.#all("SELECT * FROM missions ORDER BY created_at DESC;").map((row) => this.#snapshot(row, options));

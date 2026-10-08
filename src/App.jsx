@@ -11,6 +11,7 @@ import { ResultsHub } from "./ResultsHub.jsx";
 import { createBrowserVoiceController } from "./realtime-voice.js";
 import { ApprovalActionPanel } from "./ApprovalActionPanel.jsx";
 import { RuntimeModeSettings } from "./RuntimeModeSettings.jsx";
+import { WaitingCompanion } from "./WaitingCompanion.jsx";
 const MissionWorkspace = lazy(() => import("./MissionWorkspace.jsx").then((module) => ({ default: module.MissionWorkspace })));
 const AttentionCenter = lazy(() => import("./AttentionCenter.jsx").then((module) => ({ default: module.AttentionCenter })));
 const RequirementHub = lazy(() => import("./RequirementHub.jsx").then((module) => ({ default: module.RequirementHub })));
@@ -734,6 +735,7 @@ export function App() {
       <footer className="status-bar"><span className={codexStatus.authenticated ? "" : "offline"}><i />{healthLabel}</span><button onClick={chooseWorkspace} title={workspace?.path || "Choose a local workspace"}><FolderOpen size={13} />{workspace?.name || (live ? "Open workspace" : "Desktop required")}</button><span><GitBranch size={13} />{workspace?.branch || "—"}</span><button onClick={() => loadThreads(workspace)}><ArrowsClockwise size={13} />Sync sessions</button><span>{live ? `${codexStatus.version || "Codex"}${codexStatus.account?.planType ? ` · ${codexStatus.account.planType}` : ""}` : "Browser preview · local runtime unavailable"}</span></footer>
     </section></>}
       </div>
+      <WaitingCompanion desktop={desktop} onNavigate={setView} onOpenWork={id => { setMissionTarget({ missionId: id, panel: "result", tab: "graph", nonce: Date.now() }); setView("mission"); }} />
     </div>
     {showNewSession && <NewSessionModal workspace={workspace} models={codexStatus.models || []} onChooseWorkspace={chooseWorkspace} onClose={() => setShowNewSession(false)} onCreate={createSession} />}
   </main>;

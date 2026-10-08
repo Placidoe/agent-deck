@@ -1,4 +1,5 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, session, shell, systemPreferences } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, safeStorage, session, shell, systemPreferences } = require("electron");
+const { WaitingCompanion } = require("./waiting-companion.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 const { CodexAppServer } = require("./codex-app-server.cjs");
@@ -29,6 +30,9 @@ let nativeHarness = null;
 let adapterHost = null;
 let promptPolish = null;
 let missionReconcileTimer = null;
+let waitingCompanion = null;
+let waitingUpdateTimer = null;
+const waitingNotifications = new Set();
 const isPrimaryInstance = app.requestSingleInstanceLock();
 if (!isPrimaryInstance) app.quit();
 
@@ -225,6 +229,9 @@ ipcMain.handle("providers:bridge-config", (_event, providerId) => {
   return providerRegistry.bridgeConfig({ providerId, databasePath: missionStore.databasePath });
 });
 
+ipcMain.handle("waiting:read", () => waitingCompanion?.read() || { active: [], session: null });
+ipcMain.handle("waiting:start", (_, input) => { if (!waitingCompanion) throw new Error("桌面运行时未就绪"); return waitingCompanion.start(input); });
+ipcMain.handle("waiting:finish", (_, id) => { if (!waitingCompanion) throw new Error("桌面运行时未就绪"); return waitingCompanion.finish(id); });
 ipcMain.handle("missions:list", () => missionOrchestrator?.list() || []);
 ipcMain.handle("missions:attention", () => missionOrchestrator?.attention() || []);
 ipcMain.handle("missions:attention-briefing", () => missionOrchestrator?.attentionBriefing() || null);
@@ -440,6 +447,15 @@ ipcMain.handle("window:close", () => mainWindow?.close());
 app.whenReady().then(() => {
   if (!isPrimaryInstance) return;
   missionStore = new MissionStore(path.join(app.getPath("userData"), "agent-deck.sqlite3"));
+  waitingCompanion = new WaitingCompanion({ store: missionStore, notify: ({ critical }) => {
+    if (!Notification.isSupported()) return false;
+    const notice = new Notification({ title: "Agent Deck", body: critical ? "工作出现阻塞或授权请求。回来后查看「待我处理」；不会自动放行。" : "工作状态有更新。你可以继续休息，回来再查看结果。", silent: true });
+    waitingNotifications.add(notice);
+    notice.on("close", () => waitingNotifications.delete(notice));
+    notice.on("failed", () => { waitingCompanion.notificationStatus = "unavailable"; waitingNotifications.delete(notice); });
+    notice.on("click", () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.restore(); mainWindow.show(); mainWindow.focus(); } });
+    notice.show(); return true;
+  } });
   providerRegistry = new ProviderRegistry({
     userDataPath: app.getPath("userData"),
     safeStorage,
@@ -478,6 +494,10 @@ app.whenReady().then(() => {
   publisherService = new PublisherService({ BrowserWindow, parentWindow: () => mainWindow });
   missionOrchestrator.on("update", (update) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("mission:update", update);
+    if (waitingCompanion?.session && !waitingUpdateTimer) waitingUpdateTimer = setTimeout(() => {
+      waitingUpdateTimer = null;
+      waitingCompanion?.update();
+    }, 1000);
   });
   session.defaultSession.setPermissionCheckHandler((_webContents, permission, _origin, details) => {
     return permission === "media" && details?.mediaType === "audio";
@@ -507,6 +527,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  if (waitingUpdateTimer) clearTimeout(waitingUpdateTimer);
+  for (const notice of waitingNotifications) notice.close();
   if (missionReconcileTimer) clearInterval(missionReconcileTimer);
   codex.stop();
   promptPolish?.stop();

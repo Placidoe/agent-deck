@@ -41,6 +41,16 @@ const approveQa = process.env.AGENT_DECK_APPROVE_QA ? new (require("../desktop/m
 const modelClient = process.env.AGENT_DECK_MODEL_QA ? new (require("../desktop/codex-app-server.cjs").CodexAppServer)() : null;
 if (process.env.AGENT_DECK_WORKFLOW_QA) store.library.createFolder({ name: "产品文档 · 只读测试", rootPath: fs.realpathSync(path.join(__dirname, "../docs")) });
 const workspace = JSON.parse(fs.readFileSync(path.join(profile, "workspace.json"), "utf8"));
+let waitingQa;
+if (process.env.AGENT_DECK_WAITING_QA) {
+  const m = store.createMission({ title: "个人时间 · QA fixture（非真实执行）", outcome: "测试等待与回来简报", cwd: sandbox });
+  store.savePlan(m.id, { title: m.title, outcome: m.outcome, tasks: [{ key: "T", title: "测试任务（未调用模型）", description: "只验证交互", agentRole: "QA fixture", dependencies: [], acceptanceCriteria: ["测试"] }] });
+  const t = store.getMission(m.id).tasks[0]; store.updateTask(t.id, { status: "running", phase: "working" }); store.updateMission(m.id, { status: "running" });
+  const r = store.createRequirement({ title: "准备下一件事 · QA fixture", outcome: "只保存笔记，不启动", body: "可继续编辑", workspacePath: workspace.path });
+  waitingQa = globalThis.waitingQa = { store, missionId: m.id, taskId: t.id, noteId: r.id, notices: [] };
+}
+const waiting = new (require("../desktop/waiting-companion.cjs").WaitingCompanion)({ store, notify: input => { waitingQa?.notices.push(input); return false; } });
+if (waitingQa) waitingQa.service = waiting;
 let reviewQa;
 if (process.env.AGENT_DECK_REVIEW_QA) {
   workspace.path = sandbox;
@@ -70,6 +80,9 @@ const cancelledPolishes = new Set();
 if (workspaceQaCandidate) workspace.path = workspaceQaCandidate.cwd;
 workspace.name = path.basename(workspace.path);
 const reads = {
+  "waiting:read": () => waiting.read(),
+  "waiting:start": input => waiting.start(input),
+  "waiting:finish": id => waiting.finish(id),
   ...(reviewQa ? {
     "missions:send-message": input => { if (input.missionId !== reviewQa.missionId) throw new Error("QA refuses live mutations"); return reviewQa.orchestrator.sendMessage(input); },
     "artifacts:preview": input => artifacts.preview(input),

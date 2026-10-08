@@ -1,6 +1,7 @@
 import { SelectControl } from "./SelectControl.jsx";
 import { ExecutionModeField } from "./ExecutionModeField.jsx";
 import { PromptPolish } from "./PromptPolish.jsx";
+import { readNoteDraft, saveNoteDraft } from "./note-drafts.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowsClockwise, ArrowRight, CaretDown, ClipboardText, Play, Plus, Sparkle, Warning, X } from "@phosphor-icons/react";
 import "./requirement.css";
@@ -79,9 +80,11 @@ function RequirementQueue({ requirements, selectedId, onSelect, filter, setFilte
 }
 
 function DraftDetail({ desktop, requirement, workspace, onChooseWorkspace, onSave, onStartPlan, busy }) {
-  const [title, setTitle] = useState(requirement.title);
-  const [outcome, setOutcome] = useState(requirement.outcome || "");
-  const [body, setBody] = useState(requirement.body || "");
+  const [initial] = useState(() => readNoteDraft(requirement));
+  const [title, setTitle] = useState(initial.title);
+  const [outcome, setOutcome] = useState(initial.outcome);
+  const [body, setBody] = useState(initial.body);
+  useEffect(() => { saveNoteDraft(requirement, { title, outcome, body }); }, [requirement.id, requirement.updatedAt, title, outcome, body]);
   const mode = "auto";
   const [saving, setSaving] = useState(false);
   const [polishing, setPolishing] = useState(false);
@@ -102,13 +105,13 @@ function DraftDetail({ desktop, requirement, workspace, onChooseWorkspace, onSav
     <PromptPolish desktop={desktop} requirementId={requirement.id} draft={{ title, outcome, body }} disabled={saving || busy || !["inbox", "clarifying", "ready_to_plan", "blocked"].includes(requirement.status)} onBusyChange={setPolishing} onApply={next => { setTitle(next.title); setOutcome(next.outcome); setBody(next.body); }} />
     <ExecutionModeField />
     <div className="draft-workspace"><span>工作区</span><strong title={workspace?.path || requirement.workspacePath}>{workspace?.name || requirement.workspacePath || "尚未选择"}</strong><button onClick={onChooseWorkspace}>选择文件夹</button></div>
-    <footer><button disabled={locked || !title.trim()} onClick={() => save(false)}>保存笔记</button><button className="primary-button" disabled={locked || !title.trim() || !outcome.trim() || !(workspace?.path || requirement.workspacePath)} onClick={() => save(true)}><Play size={14} weight="fill" />{saving || busy ? "正在准备…" : "开始做 · 拆解计划"}</button></footer><small>先生成子任务和依赖，确认计划后才执行。保存笔记不消耗模型 Token。</small>
+    <footer><button disabled={locked || !title.trim()} onClick={() => save(false)}>保存笔记</button><button className="primary-button" disabled={locked || !title.trim() || !outcome.trim() || !(workspace?.path || requirement.workspacePath)} onClick={() => save(true)}><Play size={14} weight="fill" />{saving || busy ? "正在准备…" : "开始做 · 拆解计划"}</button></footer><small>当前窗口会保留未保存草稿；关闭应用前请保存笔记。保存不消耗模型 Token；开始后先生成计划，确认后才执行。</small>
   </div></section>;
 }
 
 function RequirementDetail({ desktop, requirement, workspace, onChooseWorkspace, onSaveDraft, projects, onLinkProject, onStartPlan, onOpenMission, claiming, onCreate }) {
   if (!requirement) return <section className="requirement-detail empty"><div className="empty-icon"><ClipboardText size={27} /></div><h2>从一件想完成的事开始</h2><p>写下想达成的结果，主 Agent 会先准备计划，再由你决定是否执行。</p><button onClick={onCreate}><Plus size={16} />新建工作</button><div className="how-it-works"><span>1 写清目标</span><ArrowRight size={14} /><span>2 看执行计划</span><ArrowRight size={14} /><span>3 确认后执行</span></div></section>;
-  if (!requirement.missionId) return <DraftDetail desktop={desktop} key={requirement.id} requirement={requirement} workspace={workspace} onChooseWorkspace={onChooseWorkspace} onSave={onSaveDraft} onStartPlan={onStartPlan} busy={claiming} />;
+  if (!requirement.missionId) return <DraftDetail desktop={desktop} key={`${requirement.id}:${requirement.updatedAt}`} requirement={requirement} workspace={workspace} onChooseWorkspace={onChooseWorkspace} onSave={onSaveDraft} onStartPlan={onStartPlan} busy={claiming} />;
   const state = statusFor(requirement.status); const next = nextStep(requirement); const canStart = !requirement.missionId && ["inbox", "clarifying", "ready_to_plan", "blocked"].includes(requirement.status); const action = () => canStart ? onStartPlan(requirement) : onOpenMission(requirement);
   const hasRail = Boolean(requirement.missionId);
   return <section className="requirement-detail"><div className="requirement-detail-shell"><header className="detail-heading"><div><span className="eyebrow">工作目标</span><h1>{requirement.title}</h1><div className="detail-status"><span className={`status-dot ${state.tone}`} />{state.label}<span className="detail-updated">更新于 {relativeTime(requirement.updatedAt)}</span></div></div></header>
@@ -124,7 +127,8 @@ export function RequirementHub({ desktop, workspace, codexStatus, onOpenMission,
   useEffect(() => { try { localStorage.setItem("agentdeck.personal.projectId", projectId); } catch {} }, [projectId]);
   const loadProjects = useCallback(async () => { if (desktop?.personal) { const items = await desktop.personal.projects(); setProjects(items); setProjectId(current => items.some(item => item.id === current) ? current : ""); } }, [desktop]);
   useEffect(() => { loadProjects().catch(err => setError(err.message)); const off = desktop?.personal?.onChange?.(() => loadProjects().catch(err => setError(err.message))); return () => off?.(); }, [desktop, loadProjects]);
-  const [capture, setCapture] = useState("");
+  const [capture, setCapture] = useState(() => { try { return sessionStorage.getItem("agent-deck:quick-capture") || ""; } catch { return ""; } });
+  useEffect(() => { try { sessionStorage.setItem("agent-deck:quick-capture", capture.slice(0, 300)); } catch {} }, [capture]);
   const [composerDraft, setComposerDraft] = useState(null);
   const [requirements, setRequirements] = useState([]); const [selectedId, setSelectedId] = useState(initialSelectedId); const [creating, setCreating] = useState(false); const [claiming, setClaiming] = useState(false); const [error, setError] = useState(""); const [composerOpen, setComposerOpen] = useState(false); const [filter, setFilter] = useState("all");
   useEffect(() => { if (selectedId) onSelectionChange?.(selectedId); }, [selectedId, onSelectionChange]);
